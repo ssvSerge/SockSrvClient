@@ -25,9 +25,9 @@ namespace hid {
     static_assert ( sizeof(float)       == 4, "Wrong size of float" );
     static_assert ( sizeof(double)      == 8, "Wrong size of double" );
 
-    typedef std::string          serializer_string_t;
-    typedef std::vector<uint8_t> serializer_bin_t;
-    typedef std::vector<uint8_t> serializer_storage_t;
+    typedef std::string             serializer_string_t;
+    typedef std::vector<uint8_t>    serializer_bin_t;
+    typedef std::vector<uint8_t>    serializer_storage_t;
 
     enum class serializer_state_t {
         SERIALIZER_STATE_UNKNOWN,
@@ -57,12 +57,12 @@ namespace hid {
         SERIALIZER_TYPE_VECTOR_SIZE_ZERO    = 0x20,
         SERIALIZER_TYPE_VECTOR_SIZE_BYTE    = 0x21,
         SERIALIZER_TYPE_VECTOR_SIZE_WORD    = 0x22,
-        SERIALIZER_TYPE_VECTOR_SIZE_DWORD   = 0x23,
+        SERIALIZER_TYPE_VECTOR_SIZE_DWORD   = 0x24,
 
         SERIALIZER_TYPE_STRING_SIZE_ZERO    = 0x30,
         SERIALIZER_TYPE_STRING_SIZE_BYTE    = 0x31,
         SERIALIZER_TYPE_STRING_SIZE_WORD    = 0x32,
-        SERIALIZER_TYPE_STRING_SIZE_DWORD   = 0x33,
+        SERIALIZER_TYPE_STRING_SIZE_DWORD   = 0x34,
 
         SERIALIZER_TYPE_ARR_SIZE_ZERO       = 0x40,
         SERIALIZER_TYPE_ARR_SIZE_BYTE       = 0x41,
@@ -110,12 +110,12 @@ namespace hid {
             template<typename T>
             void StoreFix ( const T& var, serializer_storage_t& storage ) {
 
-                serializer_type_t var_type;
-                size_t            var_len;
-
                 if ( can_continue() ) {
 
                     try {
+
+                        serializer_type_t var_type;
+                        size_t            var_len;
 
                         get_type(var, var_type, var_len);
 
@@ -133,9 +133,11 @@ namespace hid {
                                 break;
 
                             default:
-                                m_error_msg << "Unsupported type of variable. Expected (U)INT. Received: " << static_cast<int>(var_type);
+
+                                m_error_msg << "Unsupported type of variable. Expected (U)INT. Received: <" << typeid(var).name() << ">";
                                 m_error_pos  = m_offset;
                                 m_state      = serializer_state_t::SERIALIZER_STATE_FAILED;
+
                                 break;
                         }
 
@@ -143,9 +145,12 @@ namespace hid {
                         store ( &var, var_len, storage );
 
                     } catch ( ... ) {
-                        // TRACE_ERROR ("Exception at StoreFix");
+                        m_error_msg << "Internal error in: " << __FUNCTION__;
+                        m_error_pos  = m_offset;
+                        m_state      = serializer_state_t::SERIALIZER_STATE_FAILED;
                         m_state = serializer_state_t::SERIALIZER_STATE_FAILED;
                     }
+
                 }
 
             }
@@ -182,12 +187,12 @@ namespace hid {
 
                 if ( can_continue() ) {
 
-                    serializer_type_t var_type = serializer_type_t::SERIALIZER_TYPE_UNDEFINED;
-                    size_t            payload_len = 0;
-                    size_t            payload_len_len = 0;
-                    size_t            unused = 0;
-
                     try {
+
+                        serializer_type_t var_type = serializer_type_t::SERIALIZER_TYPE_UNDEFINED;
+                        size_t            payload_len = 0;
+                        size_t            payload_len_len = 0;
+                        size_t            unused = 0;
 
                         get_type ( var, var_type, unused );
 
@@ -216,7 +221,7 @@ namespace hid {
 
                             case serializer_type_t::SERIALIZER_TYPE_STRING_SIZE_DWORD:
 
-                                payload_len = var.length();
+                                payload_len = var.size();
 
                                 if ( payload_len == 0 ) {
                                     payload_len_len = 0;
@@ -236,9 +241,11 @@ namespace hid {
                                 break;
 
                             default:
-                                m_error_msg << "Unsupported type of variable. Expected vector<char> or vector<uchar>. Received: " << static_cast<int>(var_type);
-                                m_error_pos = m_offset;
-                                m_state = serializer_state_t::SERIALIZER_STATE_FAILED;
+
+                                m_error_msg << "Unsupported type of variable. Expected vector<char> or vector<uchar>. Received: <" << typeid(var).name() << ">";
+                                m_error_pos  = m_offset;
+                                m_state      = serializer_state_t::SERIALIZER_STATE_FAILED;
+
                                 break;
                         }
 
@@ -250,8 +257,9 @@ namespace hid {
                         }
 
                     } catch( ... ) {
-                        // TRACE_ERROR ("Exception at StoreVar");
-                        m_state = serializer_state_t::SERIALIZER_STATE_FAILED;
+                        m_error_msg << "Internal error in: " << __FUNCTION__;
+                        m_error_pos  = m_offset;
+                        m_state      = serializer_state_t::SERIALIZER_STATE_FAILED;
                     }
 
                 }
@@ -273,31 +281,40 @@ namespace hid {
             //     [  SERIALIZER_TYPE_ARR_SIZE_WORD ]      [CNT_LO][CNT_HI]
             //     [ SERIALIZER_TYPE_ARR_SIZE_DWORD ]      [CNT_LO][1][2][CNT_HI]
             //
-            void StoreArr ( uint32_t cnt, serializer_storage_t& storage ) {
+            void StoreCnt ( uint32_t cnt, serializer_storage_t& storage ) {
 
                 if ( can_continue() ) {
 
-                    serializer_type_t var_type     = serializer_type_t::SERIALIZER_TYPE_ARR_SIZE_DWORD;
-                    size_t            var_type_len = sizeof(uint32_t);
+                    try {
 
-                    if ( cnt <= 65535 ) {
-                        var_type = serializer_type_t::SERIALIZER_TYPE_ARR_SIZE_WORD;
-                        var_type_len = sizeof(uint16_t);
-                    }
-                    if (cnt <= 255) {
-                        var_type = serializer_type_t::SERIALIZER_TYPE_ARR_SIZE_BYTE;
-                        var_type_len = sizeof(uint8_t);
-                    }
-                    if (cnt == 0) {
-                        var_type = serializer_type_t::SERIALIZER_TYPE_ARR_SIZE_ZERO;
-                        var_type_len = 0;
+                        serializer_type_t var_type = serializer_type_t::SERIALIZER_TYPE_ARR_SIZE_DWORD;
+                        size_t            var_type_len = sizeof ( uint32_t );
+
+                        if ( cnt <= 65535 ) {
+                            var_type = serializer_type_t::SERIALIZER_TYPE_ARR_SIZE_WORD;
+                            var_type_len = sizeof ( uint16_t );
+                        }
+                        if ( cnt <= 255 ) {
+                            var_type = serializer_type_t::SERIALIZER_TYPE_ARR_SIZE_BYTE;
+                            var_type_len = sizeof ( uint8_t );
+                        }
+                        if ( cnt == 0 ) {
+                            var_type = serializer_type_t::SERIALIZER_TYPE_ARR_SIZE_ZERO;
+                            var_type_len = 0;
+                        }
+
+                        store ( &var_type, sizeof ( var_type ), storage );
+
+                        if( var_type_len > 0 ) {
+                            store ( &cnt, var_type_len, storage );
+                        }
+
+                    } catch( ... ) {
+                        m_error_msg << "Internal error in: " << __FUNCTION__;
+                        m_error_pos  = m_offset;
+                        m_state      = serializer_state_t::SERIALIZER_STATE_FAILED;
                     }
 
-                    store ( &var_type, sizeof(var_type), storage );
-
-                    if ( var_type_len > 0 ) {
-                        store ( &cnt, var_type_len, storage );
-                    }
                 }
             }
 
@@ -312,26 +329,34 @@ namespace hid {
             //     <VALUE>     => Variadic length (depends on TYPE_ID). Could be 1, 2, 4 or 8 bytes.
             // 
             template<typename T>
-            void LoadFix ( const serializer_storage_t& storage, T& val ) {
+            void LoadFix ( const serializer_storage_t& storage, T& var ) {
+
+                var = 0;
 
                 if ( can_continue() ) {
 
-                    size_t              exp_len;
-                    serializer_type_t   exp_type;
-                    serializer_type_t   load_type;
+                    try {
+                        size_t              exp_len = 0;
+                        serializer_type_t   exp_type = serializer_type_t::SERIALIZER_TYPE_LASTID;
+                        serializer_type_t   load_type = serializer_type_t::SERIALIZER_TYPE_LASTID;
 
-                    get_type ( val, exp_type, exp_len );
+                        get_type ( var, exp_type, exp_len );
 
-                    load (storage, &load_type, sizeof(load_type) );
+                        load ( storage, &load_type, sizeof ( load_type ) );
 
-                    if (exp_type != load_type) {
+                        if( exp_type != load_type ) {
 
-                        m_error_msg << __FUNCTION__ << "; Wrong type of variable. Expected: " << typeid(load_type).name() << "; Received: " << typeid(load_type).name();
-                        m_error_pos = m_offset;
-                        m_state     = serializer_state_t::SERIALIZER_STATE_FAILED;
+                            m_error_msg << __FUNCTION__ << "; Wrong type of variable. Expected: " << typeid(load_type).name () << "; Received: " << typeid(load_type).name ();
+                            m_error_pos = m_offset;
+                            m_state = serializer_state_t::SERIALIZER_STATE_FAILED;
 
-                    } else {
-                        load(storage, &val, exp_len);
+                        } else {
+                            load ( storage, &var, exp_len );
+                        }
+                    } catch( ... ) {
+                        m_error_msg << "Internal error in: " << __FUNCTION__;
+                        m_error_pos  = m_offset;
+                        m_state      = serializer_state_t::SERIALIZER_STATE_FAILED;
                     }
 
                 }
@@ -341,87 +366,104 @@ namespace hid {
             //     std::vector<uint8_t>, std::vector<char>, std::string
             // 
             template<typename T>
-            void LoadVar ( serializer_storage_t& storage, const T& val ) {
+            void LoadVar ( const serializer_storage_t& storage, T& var ) {
 
-                if ( can_continue() ) {
+                var.clear ();
 
-                    size_t              payload_len_len = 0;
-                    size_t              payload_len     = 0;
-                    size_t              unused;
-                    bool                is_failed       = true;
-                    serializer_type_t   exp_type;
-                    serializer_type_t   load_type;
+                if ( can_continue () ) {
 
-                    val.clear();
+                    try {
 
-                    get_type ( val, exp_type, unused );
+                        size_t              payload_len_len = 0;
+                        size_t              payload_len = 0;
+                        size_t              unused;
+                        bool                is_failed = true;
+                        serializer_type_t   exp_type;
+                        serializer_type_t   load_type;
 
-                    load ( storage, &load_type, sizeof(load_type) );
+                        get_type ( var, exp_type, unused );
 
-                    if ( exp_type == serializer_type_t::SERIALIZER_TYPE_VECTOR_SIZE_DWORD ) {
+                        load ( storage, &load_type, sizeof ( load_type ) );
 
-                        switch (load_type) {
-                            case serializer_type_t::SERIALIZER_TYPE_VECTOR_SIZE_DWORD:
-                                is_failed = false;
-                                payload_len_len = sizeof(uint32_t);
-                                break;
-                            case serializer_type_t::SERIALIZER_TYPE_VECTOR_SIZE_WORD:
-                                is_failed = false;
-                                payload_len_len = sizeof(uint32_t);
-                                break;
-                            case serializer_type_t::SERIALIZER_TYPE_VECTOR_SIZE_BYTE:
-                                is_failed = false;
-                                payload_len_len = sizeof(uint8_t);
-                                break;
-                            case serializer_type_t::SERIALIZER_TYPE_VECTOR_SIZE_ZERO:
-                                is_failed = false;
-                                payload_len_len = 0;
-                                break;
-                        }
+                        if ( exp_type == serializer_type_t::SERIALIZER_TYPE_VECTOR_SIZE_DWORD ) {
 
-                    } else
+                            switch ( load_type ) {
+                                case serializer_type_t::SERIALIZER_TYPE_VECTOR_SIZE_DWORD:
+                                    is_failed = false;
+                                    payload_len_len = sizeof ( uint32_t );
+                                    break;
+                                case serializer_type_t::SERIALIZER_TYPE_VECTOR_SIZE_WORD:
+                                    is_failed = false;
+                                    payload_len_len = sizeof ( uint16_t );
+                                    break;
+                                case serializer_type_t::SERIALIZER_TYPE_VECTOR_SIZE_BYTE:
+                                    is_failed = false;
+                                    payload_len_len = sizeof ( uint8_t );
+                                    break;
+                                case serializer_type_t::SERIALIZER_TYPE_VECTOR_SIZE_ZERO:
+                                    is_failed = false;
+                                    payload_len_len = 0;
+                                    break;
+                                default:
+                                    m_error_msg << "Unexpected type received. Expected: <TYPE_VECTOR>; Received: " << (int) load_type;
+                                    m_error_pos = m_offset;
+                                    m_state = serializer_state_t::SERIALIZER_STATE_FAILED;
+                                    break;
+                            }
 
-                    if ( exp_type == serializer_type_t::SERIALIZER_TYPE_STRING_SIZE_DWORD ) {
+                        } else
 
-                        switch (load_type) {
-                            case serializer_type_t::SERIALIZER_TYPE_STRING_SIZE_DWORD:
-                                is_failed = false;
-                                payload_len_len = sizeof(uint32_t);
-                                break;
-                            case serializer_type_t::SERIALIZER_TYPE_STRING_SIZE_WORD:
-                                is_failed = false;
-                                payload_len_len = sizeof(uint32_t);
-                                break;
-                            case serializer_type_t::SERIALIZER_TYPE_STRING_SIZE_BYTE:
-                                is_failed = false;
-                                payload_len_len = sizeof(uint8_t);
-                                break;
-                            case serializer_type_t::SERIALIZER_TYPE_STRING_SIZE_ZERO:
-                                is_failed = false;
-                                payload_len_len = 0;
-                                break;
-                        }
-                    }
+                        if ( exp_type == serializer_type_t::SERIALIZER_TYPE_STRING_SIZE_DWORD ) {
 
-                    if ( is_failed ) {
-
-                        m_error_msg << __FUNCTION__ << "; Wrong type of variable. Expected: " << typeid(load_type).name() << "; Received: " << typeid(load_type).name();
-                        m_error_pos = m_offset;
-                        m_state     = serializer_state_t::SERIALIZER_STATE_FAILED;
-
-                    } else {
-                    
-                        if ( payload_len_len > 0 ) {
-                            load ( storage, &payload_len, payload_len_len );
-                            if ( can_continue() ) {
-                                val.resize(payload_len);
-                                load (storage, val.data(), payload_len);
+                            switch ( load_type ) {
+                                case serializer_type_t::SERIALIZER_TYPE_STRING_SIZE_DWORD:
+                                    is_failed = false;
+                                    payload_len_len = sizeof ( uint32_t );
+                                    break;
+                                case serializer_type_t::SERIALIZER_TYPE_STRING_SIZE_WORD:
+                                    is_failed = false;
+                                    payload_len_len = sizeof ( uint16_t );
+                                    break;
+                                case serializer_type_t::SERIALIZER_TYPE_STRING_SIZE_BYTE:
+                                    is_failed = false;
+                                    payload_len_len = sizeof ( uint8_t );
+                                    break;
+                                case serializer_type_t::SERIALIZER_TYPE_STRING_SIZE_ZERO:
+                                    is_failed = false;
+                                    payload_len_len = 0;
+                                    break;
+                                default:
+                                    m_error_msg << "Unexpected type received. Expected: <TYPE_STRING>; Received: " << (int) load_type;
+                                    m_error_pos = m_offset;
+                                    m_state = serializer_state_t::SERIALIZER_STATE_FAILED;
+                                    break;
                             }
                         }
 
-                    }
-                }
+                        if ( is_failed ) {
 
+                            m_error_msg << __FUNCTION__ << "; Wrong type of variable. Expected: " << typeid(load_type).name () << "; Received: " << typeid(load_type).name ();
+                            m_error_pos = m_offset;
+                            m_state = serializer_state_t::SERIALIZER_STATE_FAILED;
+
+                        } else {
+
+                            if ( payload_len_len > 0 ) {
+                                load ( storage, &payload_len, payload_len_len );
+                                if( can_continue () ) {
+                                    var.resize ( payload_len );
+                                    load ( storage, var.data (), payload_len );
+                                }
+                            }
+
+                        }
+
+                    } catch ( ... ) {
+                        m_error_msg << "Internal error in: " << __FUNCTION__;
+                        m_error_pos  = m_offset;
+                        m_state      = serializer_state_t::SERIALIZER_STATE_FAILED;
+                    }
+                }   
             }
 
             // Supported types (or compatible):
@@ -430,50 +472,66 @@ namespace hid {
             // Result: 
             //     Load the specific value <repetition counter> to storage. Stored <TYPE> <CNT>
             // 
-            void LoadArr ( serializer_storage_t& storage, uint32_t& cnt ) {
+            void LoadCnt ( const serializer_storage_t& storage, uint32_t& cnt ) {
 
                 cnt = 0;
 
-                if ( m_state == serializer_state_t::SERIALIZER_STATE_OK ) {
+                if ( can_continue () ) {
 
-                    serializer_type_t var_type;
-                    size_t            arr_len_len = 0;
-                    uint32_t          arr_len     = 0;
+                    try {
 
-                    load ( storage, &var_type, sizeof(var_type) );
+                        serializer_type_t var_type;
+                        size_t            arr_len_len = 0;
+                        uint32_t          arr_len     = 0;
 
-                    switch (var_type) {
-                        case serializer_type_t::SERIALIZER_TYPE_ARR_SIZE_ZERO:
-                            arr_len_len = 0;
-                            break;
-                        case serializer_type_t::SERIALIZER_TYPE_ARR_SIZE_BYTE:
-                            arr_len_len = 1;
-                            break;
-                        case serializer_type_t::SERIALIZER_TYPE_ARR_SIZE_WORD:
-                            arr_len_len = 2;
-                            break;
-                        case serializer_type_t::SERIALIZER_TYPE_ARR_SIZE_DWORD:
-                            arr_len_len = 4;
-                            break;
-                        default:
-                            // TRACE_ERROR ("Wrong type. Expected: %d; Received: %d", vt, st);
-                            m_state = serializer_state_t::SERIALIZER_STATE_FAILED;
-                            break;
-                    }
+                        load ( storage, &var_type, sizeof(var_type) );
 
-                    if (arr_len_len > 0) {
-                        load ( storage, &arr_len, arr_len_len );
-                        if (can_continue()) {
-                            cnt = arr_len;
+                        switch (var_type) {
+                            case serializer_type_t::SERIALIZER_TYPE_ARR_SIZE_ZERO:
+                                arr_len_len = 0;
+                                break;
+                            case serializer_type_t::SERIALIZER_TYPE_ARR_SIZE_BYTE:
+                                arr_len_len = 1;
+                                break;
+                            case serializer_type_t::SERIALIZER_TYPE_ARR_SIZE_WORD:
+                                arr_len_len = 2;
+                                break;
+                            case serializer_type_t::SERIALIZER_TYPE_ARR_SIZE_DWORD:
+                                arr_len_len = 4;
+                                break;
+                            default:
+                                // TRACE_ERROR ("Wrong type. Expected: %d; Received: %d", vt, st);
+                                m_state = serializer_state_t::SERIALIZER_STATE_FAILED;
+                                break;
                         }
+
+                        if (arr_len_len > 0) {
+                            load ( storage, &arr_len, arr_len_len );
+                            if (can_continue()) {
+                                cnt = arr_len;
+                            }
+                        }
+
+                    } catch ( ... ) {
+                        m_error_msg << "Internal error in: " << __FUNCTION__;
+                        m_error_pos  = m_offset;
+                        m_state      = serializer_state_t::SERIALIZER_STATE_FAILED;
                     }
 
                 }
             }
 
+        public:
+            bool Staus ( const serializer_storage_t& storage ) {
+                
+                if ( m_state != serializer_state_t::SERIALIZER_STATE_OK ) {
+                    return false;
+                }
+                return (storage.size () == m_offset);
+            }
 
         private:
-            bool can_continue() {
+            bool can_continue () {
                 return (m_state == serializer_state_t::SERIALIZER_STATE_OK);
             }
 
@@ -507,7 +565,7 @@ namespace hid {
                 }
             }
 
-            void load  ( const serializer_storage_t& storage, void* value, size_t len) {
+            void load  ( const serializer_storage_t& storage, void* const value, size_t len) {
                 if ( (m_offset+len)  > storage.size() ) {
                     m_state = serializer_state_t::SERIALIZER_STATE_FAILED;
                 } else {
@@ -520,22 +578,22 @@ namespace hid {
             template<typename T>
             static void get_type ( const T val, serializer_type_t& vt, size_t& len ) {
 
-                static std::string_view t_uint8     (typeid(uint8_t).name()  );
-                static std::string_view t_int8      (typeid(int8_t).name()   );
-                static std::string_view t_uint16    (typeid(uint16_t).name() );
-                static std::string_view t_int16     (typeid(int16_t).name()  );
-                static std::string_view t_uint32    (typeid(uint32_t).name() );
-                static std::string_view t_int32     (typeid(int32_t).name()  );
-                static std::string_view t_uint64    (typeid(uint64_t).name() );
-                static std::string_view t_int64     (typeid(int64_t).name()  );
-                static std::string_view t_float     (typeid(float).name()    );
-                static std::string_view t_double    (typeid(double).name()   );
-                static std::string_view t_arr_char  (typeid(serializer_string_t).name() );
-                static std::string_view t_arr_byte  (typeid(serializer_bin_t).name() );
-                static std::string_view t_arr_len   (typeid(serializer_len_t).name() );
-                static std::string_view t_type      (typeid(serializer_type_t).name() );
+                static std::string_view t_uint8     = typeid(uint8_t).name();
+                static std::string_view t_int8      = typeid(int8_t).name();
+                static std::string_view t_uint16    = typeid(uint16_t).name();
+                static std::string_view t_int16     = typeid(int16_t).name();
+                static std::string_view t_uint32    = typeid(uint32_t).name();
+                static std::string_view t_int32     = typeid(int32_t).name();
+                static std::string_view t_uint64    = typeid(uint64_t).name();
+                static std::string_view t_int64     = typeid(int64_t).name();
+                static std::string_view t_float     = typeid(float).name();
+                static std::string_view t_double    = typeid(double).name();
+                static std::string_view t_arr_char  = typeid(serializer_string_t).name();
+                static std::string_view t_arr_byte  = typeid(serializer_bin_t).name();
+                static std::string_view t_arr_len   = typeid(serializer_len_t).name();
+                static std::string_view t_type      = typeid(serializer_type_t).name();
 
-                std::string_view in_type ( typeid(val).name() );
+                const std::string_view in_type ( typeid(val).name() );
 
                 vt = serializer_type_t::SERIALIZER_TYPE_UNDEFINED;
 
@@ -584,11 +642,11 @@ namespace hid {
 
 
                 if ( in_type == t_arr_char ) {
-                    vt  = serializer_type_t::SERIALIZER_TYPE_VECTOR_SIZE_DWORD;
+                    vt  = serializer_type_t::SERIALIZER_TYPE_STRING_SIZE_DWORD;
                     len = 0;
                 } else
                 if ( in_type == t_arr_byte ) {
-                    vt = serializer_type_t::SERIALIZER_TYPE_STRING_SIZE_DWORD;
+                    vt = serializer_type_t::SERIALIZER_TYPE_VECTOR_SIZE_DWORD;
                     len = 0;
                 } else
 
@@ -604,12 +662,11 @@ namespace hid {
             }
 
         private:
-            serializer_state_t  m_state;
-            size_t              m_offset;
-            std::stringstream   m_error_msg;
-            size_t              m_error_pos;
+            serializer_state_t      m_state;
+            size_t                  m_offset;
+            std::stringstream       m_error_msg;
+            size_t                  m_error_pos;
     };
-
 
 }
 
