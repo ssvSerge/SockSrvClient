@@ -20,7 +20,7 @@ namespace hid {
     static_assert ( sizeof(int)         == 4, "Wrong size of int" );
  // static_assert ( sizeof(long)        == 4, "Wrong size of long" );
     static_assert ( sizeof(long long)   == 8, "Wrong size of long long" );
-    static_assert ( sizeof(size_t)      == 8, "Wrong size of size_t" );
+//  static_assert ( sizeof(size_t)      == 8, "Wrong size of size_t" );
     static_assert ( sizeof(float)       == 4, "Wrong size of float" );
     static_assert ( sizeof(double)      == 8, "Wrong size of double" );
 
