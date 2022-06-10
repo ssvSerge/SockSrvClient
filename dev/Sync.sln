@@ -3,9 +3,7 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.2.32526.322
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Sync_01", "Sync\Sync.vcxproj", "{E4E24466-4065-444C-ADD2-55D92E1A9AE4}"
-EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "SerializerTest", "SerializerTest\SerializerTest.vcxproj", "{5D14266E-ED42-4615-ACD3-320126F21853}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Serializer_test", "Sync\Sync.vcxproj", "{E4E24466-4065-444C-ADD2-55D92E1A9AE4}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -23,14 +21,6 @@ Global
 		{E4E24466-4065-444C-ADD2-55D92E1A9AE4}.Release|x64.Build.0 = Release|x64
 		{E4E24466-4065-444C-ADD2-55D92E1A9AE4}.Release|x86.ActiveCfg = Release|Win32
 		{E4E24466-4065-444C-ADD2-55D92E1A9AE4}.Release|x86.Build.0 = Release|Win32
-		{5D14266E-ED42-4615-ACD3-320126F21853}.Debug|x64.ActiveCfg = Debug|x64
-		{5D14266E-ED42-4615-ACD3-320126F21853}.Debug|x64.Build.0 = Debug|x64
-		{5D14266E-ED42-4615-ACD3-320126F21853}.Debug|x86.ActiveCfg = Debug|Win32
-		{5D14266E-ED42-4615-ACD3-320126F21853}.Debug|x86.Build.0 = Debug|Win32
-		{5D14266E-ED42-4615-ACD3-320126F21853}.Release|x64.ActiveCfg = Release|x64
-		{5D14266E-ED42-4615-ACD3-320126F21853}.Release|x64.Build.0 = Release|x64
-		{5D14266E-ED42-4615-ACD3-320126F21853}.Release|x86.ActiveCfg = Release|Win32
-		{5D14266E-ED42-4615-ACD3-320126F21853}.Release|x86.Build.0 = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
