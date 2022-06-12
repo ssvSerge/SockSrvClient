@@ -9,24 +9,23 @@
 #include <sstream>
 #include <cstring>
 
+#include <HidTypes.h>
+
 namespace hid {
 
-    // Reader and Writer must be synchronized with the length of variables
-    // Assume we're on the 64 bit CPU architecture.
+    // Reader and Writer must be synchronized with the length of variables.
+    // There mighe be inconsistence with STORE(int) and LOAD(int).
+    // It is recommended to use implicit size declaration (int32_t or similar).
     static_assert ( sizeof(uint8_t)     == 1, "Wrong size of uint8_t" );
     static_assert ( sizeof(uint16_t)    == 2, "Wrong size of uint16_t" );
     static_assert ( sizeof(uint32_t)    == 4, "Wrong size of uint32_t" );
     static_assert ( sizeof(uint64_t)    == 8, "Wrong size of uint64_t" );
     static_assert ( sizeof(int)         == 4, "Wrong size of int" );
- // static_assert ( sizeof(long)        == 4, "Wrong size of long" );
+    static_assert ( sizeof(long)        == 4, "Wrong size of long" );
     static_assert ( sizeof(long long)   == 8, "Wrong size of long long" );
-//  static_assert ( sizeof(size_t)      == 8, "Wrong size of size_t" );
+    static_assert ( sizeof(size_t)      == 8, "Wrong size of size_t" );
     static_assert ( sizeof(float)       == 4, "Wrong size of float" );
     static_assert ( sizeof(double)      == 8, "Wrong size of double" );
-
-    typedef std::string             serializer_string_t;
-    typedef std::vector<uint8_t>    serializer_bin_t;
-    typedef std::vector<uint8_t>    serializer_storage_t;
 
     enum class serializer_state_t {
         SERIALIZER_STATE_UNKNOWN,
@@ -489,23 +488,23 @@ namespace hid {
 
         public:
 
-            bool IsOk() {
+            bool ExportStatus() const {
                 if (m_state != serializer_state_t::SERIALIZER_STATE_OK) {
                     return false;
                 }
                 return true;
             }
 
-            bool Staus ( const serializer_storage_t& storage ) {
+            bool ImportStatus ( const serializer_storage_t& storage ) const {
                 
-                if ( ! IsOk() ) {
+                if (m_state != serializer_state_t::SERIALIZER_STATE_OK) {
                     return false;
                 }
                 return (storage.size () == m_offset);
             }
 
         private:
-            bool can_continue () {
+            bool can_continue () const {
                 return (m_state == serializer_state_t::SERIALIZER_STATE_OK);
             }
 

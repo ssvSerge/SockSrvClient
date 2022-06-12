@@ -9,7 +9,7 @@
 
 #define SUN_LEN(su) (int) ((sizeof(*(su)) - sizeof((su)->sun_path) + strlen((su)->sun_path)))
 
-#define SERVER_PATH     "/tmp/sock_server"
+#define SERVER_PATH     "/temp/sock_server"
 #define BUFFER_LENGTH    250
 #define FALSE              0
 

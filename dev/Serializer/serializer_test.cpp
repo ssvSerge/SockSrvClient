@@ -3,7 +3,7 @@
 #include <vector>
 #include <string>
 
-#include "Serializer.h"
+#include <Serializer.h>
 
 #define  CNT_INT32          ( 66 * 1024 )
 #define  CNT_INT16          ( 300 )
@@ -203,7 +203,7 @@ static void serialize_test() {
         serializer.StoreFix ( data_out.param_flo_09, storage_out );
         serializer.StoreFix ( data_out.param_flo_10, storage_out );
 
-        std::cout << serializer.IsOk();
+        std::cout << serializer.ExportStatus();
     }
 
     {   hid::Serializer serializer;
@@ -219,7 +219,7 @@ static void serialize_test() {
         serializer.LoadFix ( storage_out, data_inp.param_flo_09 );
         serializer.LoadFix ( storage_out, data_inp.param_flo_10 );
 
-        std::cout << serializer.Staus(storage_out);
+        std::cout << serializer.ImportStatus(storage_out);
     }
 
     std::cout << (data_out.param_int_01 == data_inp.param_int_01);
@@ -348,21 +348,21 @@ static void serialize_wrong() {
         hid::serializer_storage_t storage;
         serializer.StoreFix(param_int, storage);    // OK
         serializer.StoreFix(param_str, storage);    // Cannot store STR as Integral. Failed.
-        std::cout << ( ! serializer.IsOk() );
+        std::cout << ( ! serializer.ExportStatus() );
     }
 
     {   hid::Serializer serializer;
         hid::serializer_storage_t storage;
         serializer.StoreFix(param_int, storage);    // OK
         serializer.StoreFix(param_obj, storage);    // Cannot store OBJ as Integral. Failed.
-        std::cout << ( ! serializer.IsOk() );
+        std::cout << ( ! serializer.ExportStatus() );
     }
 
     {   hid::Serializer serializer;
         hid::serializer_storage_t storage;
         serializer.StoreVar(param_str,  storage);   // OK
         serializer.StoreVar(param_list, storage);   // Unsupported type.  Failed.
-        std::cout << ( ! serializer.IsOk() );
+        std::cout << ( ! serializer.ExportStatus() );
     }
 
     {   hid::Serializer serializer_out;
@@ -372,10 +372,10 @@ static void serialize_wrong() {
         char   c1 = 0;
 
         serializer_out.StoreFix ( p1, storage ); // Ok
-        std::cout << serializer_out.IsOk();
+        std::cout << serializer_out.ExportStatus();
 
         serializer_inp.LoadFix  ( storage, c1 ); // Stored <size_t> but Requested <char>. Failed.
-        std::cout << ( ! serializer_inp.IsOk() );
+        std::cout << ( ! serializer_inp.ExportStatus() );
     }
 
 
@@ -386,10 +386,10 @@ static void serialize_wrong() {
         hid::serializer_bin_t    p2;
 
         serializer_out.StoreVar ( p1, storage ); // Ok
-        std::cout << serializer_out.IsOk();
+        std::cout << serializer_out.ExportStatus();
 
         serializer_inp.LoadVar  ( storage, p2 ); // Stored as <STR>, Load as <BIN>. Failed.
-        std::cout << ( ! serializer_inp.IsOk() );
+        std::cout << ( ! serializer_inp.ExportStatus() );
     }
 
     {   hid::Serializer serializer_out;
@@ -399,10 +399,10 @@ static void serialize_wrong() {
         hid::serializer_string_t p2 = "abcd";
 
         serializer_out.StoreVar ( p1, storage ); // Ok
-        std::cout << serializer_out.IsOk();
+        std::cout << serializer_out.ExportStatus();
 
         serializer_inp.LoadVar  ( storage, p2 ); // Stored as <BIN>, Load as <STR>. Failed.
-        std::cout << ( ! serializer_inp.IsOk() );
+        std::cout << ( ! serializer_inp.ExportStatus() );
     }
 
 
@@ -413,10 +413,10 @@ static void serialize_wrong() {
         size_t  p2 = 0;
 
         serializer_out.StoreCnt ( p1, storage ); // Ok
-        std::cout << serializer_out.IsOk();
+        std::cout << serializer_out.ExportStatus();
 
         serializer_inp.LoadFix ( storage, p2 ); // Stored as <CNT>, Load as <INT>. Failed.
-        std::cout << ( ! serializer_inp.IsOk() );
+        std::cout << ( ! serializer_inp.ExportStatus() );
     }
 
     {   hid::Serializer serializer_out;
@@ -426,23 +426,24 @@ static void serialize_wrong() {
         size_t  p2 = 0;
 
         serializer_out.StoreFix ( p1, storage ); // Ok
-        std::cout << serializer_out.IsOk();
+        std::cout << serializer_out.ExportStatus();
 
         serializer_inp.LoadCnt ( storage, p2 ); // Stored as <CNT>, Load as <INT>. Failed.
-        std::cout << ( ! serializer_inp.IsOk() );
+        std::cout << ( ! serializer_inp.ExportStatus() );
     }
 
     {   hid::Serializer serializer_out;
         hid::Serializer serializer_in;
-        hid::serializer_storage_t storage;
-        hid::serializer_string_t p1 = "abcd";
-        hid::serializer_string_t p2 = "1234";
-        complex_list_t           p3;
+        hid::serializer_storage_t   storage;
+        hid::serializer_string_t    p1 = "abcd";
+        hid::serializer_string_t    p2 = "1234";
+        hid::serializer_string_t    p3;
 
         serializer_out.StoreVar ( p1, storage );
         serializer_out.StoreVar ( p2, storage );
+        std::cout << serializer_out.ExportStatus(); // OK
         serializer_in.LoadVar ( storage, p3 );
-
+        std::cout << ( ! serializer_in.ImportStatus(storage) );  // Stored 2 parameters; Load 2. Failed.
     }
 
     std::cout << std::endl;
@@ -458,12 +459,11 @@ static void serialize_cnt() {
 
         serializer_out.StoreFix(p1, storage);  
         serializer_out.StoreFix(p2, storage);  // OK
-        std::cout << ( serializer_out.IsOk() );
+        std::cout << ( serializer_out.ExportStatus() );
         serializer_in.LoadFix(storage, r1);
         serializer_in.LoadFix(storage, r2);
         serializer_in.LoadFix(storage, r3);    // Requesting 3 parameters while 2 stored. Failed.
-
-        std::cout << ( !serializer_in.Staus(storage) );
+        std::cout << ( !serializer_in.ImportStatus(storage) );
     }
 
 
@@ -475,12 +475,11 @@ static void serialize_cnt() {
 
         serializer_out.StoreVar(p1, storage);  
         serializer_out.StoreVar(p2, storage);  // OK
-        std::cout << ( serializer_out.IsOk() );
+        std::cout << ( serializer_out.ExportStatus() );
         serializer_in.LoadVar(storage, r1);
         serializer_in.LoadVar(storage, r2);
         serializer_in.LoadVar(storage, r3);    // Requesting 3 parameters while 2 stored. Failed.
-
-        std::cout << ( !serializer_in.Staus(storage) );
+        std::cout << ( !serializer_in.ImportStatus(storage) );
     }
 
     {   hid::Serializer serializer_out;
@@ -491,11 +490,26 @@ static void serialize_cnt() {
 
         serializer_out.StoreCnt(p1, storage);
         serializer_out.StoreCnt(p2, storage);  // OK
-        std::cout << (serializer_out.IsOk());
+        std::cout << (serializer_out.ExportStatus());
         serializer_in.LoadCnt(storage, r1);
         serializer_in.LoadCnt(storage, r2);
         serializer_in.LoadCnt(storage, r3);    // Requesting 3 parameters while 2 stored. Failed.
-        std::cout << (!serializer_in.Staus(storage));
+        std::cout << (!serializer_in.ImportStatus(storage));
+    }
+
+    {   hid::Serializer serializer_out;
+        hid::Serializer serializer_in;
+        hid::serializer_storage_t storage;
+        size_t p1 = 100, p2 = 888, p3 = 666;
+        size_t r1, r2;
+
+        serializer_out.StoreCnt(p1, storage);
+        serializer_out.StoreCnt(p2, storage);  // OK
+        serializer_out.StoreCnt(p3, storage);  // OK
+        std::cout << (serializer_out.ExportStatus());
+        serializer_in.LoadCnt(storage, r1);
+        serializer_in.LoadCnt(storage, r2);
+        std::cout << (!serializer_in.ImportStatus(storage)); // Failed. Stored 3, load 2.
     }
 
     std::cout << std::endl;
