@@ -72,7 +72,8 @@ namespace socket {
 
     typedef void (*ev_handler_t) (::hid::types::storage_t& in_data, ::hid::types::storage_t& out_data );
 
-    typedef std::future<bool>  sock_thread_t;
+    typedef std::future<bool>           sock_thread_t;
+    typedef std::list<sock_thread_t>    clients_list_t;
 
     class SocketServer {
 
@@ -96,6 +97,8 @@ namespace socket {
             bool  ConnMoveToExpired ();
             bool  ConnProcessExpired ();
 
+            bool  check_server_socket ( os_sock_t& server_socket, bool& restarted );
+
         private:
             std::mutex          m_controller;
 
@@ -103,7 +106,7 @@ namespace socket {
             std::thread         m_server_thread;
             std::atomic<int>    m_instance_cnt;
 
-         // sock_conn_list_t    m_clients;
+            clients_list_t      m_clients;
 
             std::string         m_port;
             conn_type_t         m_conn_type;
@@ -123,6 +126,7 @@ namespace socket {
             bool send_frame ( const ::hid::types::storage_t& out_frame, bool re_connect_enabled );
             bool recv_frame ( ::hid::types::storage_t& inp_frame );
             bool sock_tx ( const ::hid::types::storage_t& out_frame, size_t& tx_offset );
+            bool sock_rx ( ::hid::types::storage_t& inp_frame, size_t& rx_offset );
             void sock_close ();
             void sock_open ();
             bool sock_connect ();
