@@ -47,17 +47,20 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <LinkIncremental>true</LinkIncremental>
     <RunCodeAnalysis>true</RunCodeAnalysis>
-    <EnableMicrosoftCodeAnalysis>false</EnableMicrosoftCodeAnalysis>
+    <EnableMicrosoftCodeAnalysis>true</EnableMicrosoftCodeAnalysis>
     <EnableClangTidyCodeAnalysis>true</EnableClangTidyCodeAnalysis>
     <OutDir>$(SolutionDir)_bin\$(Configuration)\</OutDir>
     <IntDir>$(OutDir)_obj\$(ProjectName)\</IntDir>
-    <IncludePath>$(SolutionDir)common\;$(IncludePath)</IncludePath>
+    <IncludePath>$(SolutionDir)common\include;$(IncludePath)</IncludePath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <LinkIncremental>false</LinkIncremental>
     <OutDir>$(SolutionDir)_bin\$(Configuration)\</OutDir>
     <IntDir>$(OutDir)_obj\$(ProjectName)\</IntDir>
-    <IncludePath>$(SolutionDir)common\;$(IncludePath)</IncludePath>
+    <IncludePath>$(SolutionDir)common\include;$(IncludePath)</IncludePath>
+    <RunCodeAnalysis>true</RunCodeAnalysis>
+    <EnableClangTidyCodeAnalysis>true</EnableClangTidyCodeAnalysis>
+    <EnableMicrosoftCodeAnalysis>true</EnableMicrosoftCodeAnalysis>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>

@@ -9,7 +9,7 @@
 
 #define SUN_LEN(su) (int) ((sizeof(*(su)) - sizeof((su)->sun_path) + strlen((su)->sun_path)))
 
-#define SERVER_PATH     "/temp/sock_server"
+#define SERVER_PATH     "/tmp/sock_server"
 #define BUFFER_LENGTH    250
 #define FALSE              0
 
@@ -26,7 +26,7 @@ int main ( void ) {
     WSADATA             wsaData;
 
     wVersionRequested = MAKEWORD(2, 2);
-    WSAStartup(wVersionRequested, &wsaData);
+    (void) WSAStartup(wVersionRequested, &wsaData);
 
     do {
 
@@ -55,7 +55,7 @@ int main ( void ) {
 
         printf("Ready for client connect().\n");
 
-        sd2 = accept(sd1, NULL, NULL);
+        sd2 = (int) accept(sd1, NULL, NULL);
         if (sd2 < 0) {
             perror("accept() failed");
             break;

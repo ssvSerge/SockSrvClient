@@ -21,7 +21,7 @@ namespace hid {
     static_assert ( sizeof(uint32_t)    == 4, "Wrong size of uint32_t" );
     static_assert ( sizeof(uint64_t)    == 8, "Wrong size of uint64_t" );
     static_assert ( sizeof(int)         == 4, "Wrong size of int" );
-    static_assert ( sizeof(long)        == 8, "Wrong size of long" );
+    static_assert ( sizeof(long)        == 4, "Wrong size of long" );
     static_assert ( sizeof(long long)   == 8, "Wrong size of long long" );
     static_assert ( sizeof(size_t)      == 8, "Wrong size of size_t" );
     static_assert ( sizeof(float)       == 4, "Wrong size of float" );
@@ -106,7 +106,7 @@ namespace hid {
             //     [ SERIALIZER_TYPE_UINT64 ]   [value_lo][2][3][4][5][6][7][value_hi]
             //
             template<typename T>
-            void StoreFix ( const T& var, serializer_storage_t& storage ) {
+            void StoreFix ( const T& var, ::hid::types::storage_t& storage ) {
 
                 if ( can_continue() ) {
 
@@ -174,7 +174,7 @@ namespace hid {
             //     [ SERIALIZER_TYPE_STRING_SIZE_DWORD ]   [LEN_LO][1][2][LEN_HI]   [Payload begin] ... [Payload end]
             // 
             template<typename T>
-            void StoreVar ( const T& var, serializer_storage_t& storage ) {
+            void StoreVar ( const T& var, ::hid::types::storage_t& storage) {
 
                 if ( can_continue() ) {
 
@@ -266,7 +266,7 @@ namespace hid {
             //     [  SERIALIZER_TYPE_CNT_SIZE_WORD ]      [CNT_LO][CNT_HI]
             //     [ SERIALIZER_TYPE_CNT_SIZE_DWORD ]      [CNT_LO][1][2][CNT_HI]
             //
-            void StoreCnt ( size_t cnt, serializer_storage_t& storage ) {
+            void StoreCnt ( size_t cnt, ::hid::types::storage_t& storage ) {
 
                 if ( can_continue() ) {
 
@@ -312,7 +312,7 @@ namespace hid {
             //     <VALUE>     => Variadic length (depends on TYPE_ID). Could be 1, 2, 4 or 8 bytes.
             // 
             template<typename T>
-            void LoadFix ( const serializer_storage_t& storage, T& var ) {
+            void LoadFix ( const ::hid::types::storage_t& storage, T& var ) {
 
                 var = 0;
 
@@ -347,7 +347,7 @@ namespace hid {
             //     std::vector<uint8_t>, std::vector<char>, std::string
             // 
             template<typename T>
-            void LoadVar ( const serializer_storage_t& storage, T& var ) {
+            void LoadVar ( const ::hid::types::storage_t& storage, T& var ) {
 
                 var.clear ();
 
@@ -437,7 +437,7 @@ namespace hid {
             // Result: 
             //     Load the specific value <repetition counter> to storage. Stored <TYPE> <CNT>
             // 
-            void LoadCnt ( const serializer_storage_t& storage, size_t& cnt ) {
+            void LoadCnt ( const ::hid::types::storage_t& storage, size_t& cnt ) {
 
                 cnt = 0;
 
@@ -495,7 +495,7 @@ namespace hid {
                 return true;
             }
 
-            bool ImportStatus ( const serializer_storage_t& storage ) const {
+            bool ImportStatus ( const ::hid::types::storage_t& storage ) const {
                 
                 if (m_state != serializer_state_t::SERIALIZER_STATE_OK) {
                     return false;
@@ -508,7 +508,7 @@ namespace hid {
                 return (m_state == serializer_state_t::SERIALIZER_STATE_OK);
             }
 
-            void check_size ( serializer_storage_t& storage, size_t len ) {
+            void check_size ( ::hid::types::storage_t& storage, size_t len ) {
                 try {
                     size_t my_capacity = storage.capacity();
                     if ( my_capacity < (m_offset + len + 32) ) {
@@ -520,7 +520,7 @@ namespace hid {
                 }
             }
 
-            void store ( const void* const value, size_t len, serializer_storage_t& storage ) {
+            void store ( const void* const value, size_t len, ::hid::types::storage_t& storage ) {
 
                 try {
 
@@ -536,7 +536,7 @@ namespace hid {
                 }
             }
 
-            void load ( const char* const fname, const serializer_storage_t& storage, void* const value, size_t len) {
+            void load ( const char* const fname, const ::hid::types::storage_t& storage, void* const value, size_t len) {
                 if ( (m_offset+len)  > storage.size() ) {
                     err(fname, "No more data stored.");
                     m_state = serializer_state_t::SERIALIZER_STATE_FAILED;
@@ -580,8 +580,8 @@ namespace hid {
                 static std::string_view t_int64     = typeid(int64_t).name();
                 static std::string_view t_float     = typeid(float).name();
                 static std::string_view t_double    = typeid(double).name();
-                static std::string_view t_arr_char  = typeid(serializer_string_t).name();
-                static std::string_view t_arr_byte  = typeid(serializer_bin_t).name();
+                static std::string_view t_arr_char  = typeid(::hid::types::string_t).name();
+                static std::string_view t_arr_byte  = typeid(::hid::types::storage_t).name();
 
                 static int undef_cnt = 0;
 

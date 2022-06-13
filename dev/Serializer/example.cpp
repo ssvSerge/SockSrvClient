@@ -5,7 +5,7 @@
 
 typedef struct tag_media_info {
     std::string     payload;
-    int             payload_type;
+    int             payload_type = 0;
 }   media_info_t;
 
 typedef std::vector<media_info_t>   media_list_t;
@@ -63,7 +63,7 @@ class V100_command {
 
     public:
 
-        bool ParametersExport ( hid::serializer_storage_t& storage ) {
+        bool ParametersExport ( ::hid::types::storage_t& storage ) {
             // (Step 1) Host side. Serialize parameters to external storage.
             hid::Serializer hid_tool;
             hid_tool.StoreFix ( request_param1, storage );
@@ -72,8 +72,8 @@ class V100_command {
             return hid_tool.ExportStatus ();
         }
 
-        bool ParametersImport ( const hid::serializer_storage_t& storage ) {
-            // (Step 2) Device side. Load paramters.
+        bool ParametersImport ( const ::hid::types::storage_t& storage ) {
+            // (Step 2) Device side. Load parameters.
             hid::Serializer hid_tool;
             hid_tool.LoadFix (storage, request_param1);
             hid_tool.LoadFix (storage, request_param2);
@@ -82,7 +82,7 @@ class V100_command {
 
         }
 
-        bool ResponseExport ( hid::serializer_storage_t& storage ) {
+        bool ResponseExport ( ::hid::types::storage_t& storage ) {
             // (Step 3) Device side. Serialize response to external storage.
             hid::Serializer hid_tool;
             hid_tool.StoreCnt ( response_media.size(), storage );
@@ -93,7 +93,7 @@ class V100_command {
             return hid_tool.ExportStatus ();
         }
 
-        bool ResponseImport ( const hid::serializer_storage_t& storage ) {
+        bool ResponseImport ( const ::hid::types::storage_t& storage ) {
             // (Step 4) Host side. Load response.
             hid::Serializer hid_tool;
             size_t cnt;
@@ -108,9 +108,9 @@ class V100_command {
         }
 
     protected:
-        char            request_param1;
-        int             request_param2;
-        size_t          request_param3;
+        char            request_param1 = 0;
+        int             request_param2 = 0;
+        size_t          request_param3 = 0;
 
     protected:
         media_list_t    response_media;
@@ -120,19 +120,19 @@ class V100_command {
 int main () {
 
     V100_command                host_object;
-    hid::serializer_storage_t   host_transport_transaction_out;
-    hid::serializer_storage_t   host_transport_transaction_in;
+    ::hid::types::storage_t     host_transport_transaction_out;
+    ::hid::types::storage_t     host_transport_transaction_in;
 
     V100_command                device_object;
-    hid::serializer_storage_t   device_transport_transaction_in;
-    hid::serializer_storage_t   device_transport_transaction_out;
+    ::hid::types::storage_t     device_transport_transaction_in;
+    ::hid::types::storage_t     device_transport_transaction_out;
 
 
     // Host side.
-    {   // Prepare imput parameters.
+    {   // Prepare input parameters.
         host_object.LoadParameters ();
 
-        {   // Optional but stronly recommeded.
+        {   // Optional but strongly recommended.
             // Estimate the required size and reserve memory.
             host_transport_transaction_out.reserve ( 1024 );
         }
@@ -153,7 +153,7 @@ int main () {
         // Execute command and prepare response.
         device_object.ExecCommand ();
 
-        {   // Optional but stronly recommeded.
+        {   // Optional but strongly recommended.
             // Estimate the required size and reserve memory.
             device_transport_transaction_out.reserve ( 1024 );
         }

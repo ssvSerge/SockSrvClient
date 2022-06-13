@@ -4,21 +4,21 @@
 
 int main () {
 
-    hid::serializer_bin_t   storage;
+    hid::types::storage_t           storage;
 
-    hid::stream_params_t    params_out;
-    hid::StreamPrefix       prefix_out;
+    hid::stream::stream_params_t    params_out;
+    hid::stream::StreamPrefix       prefix_out;
 
-    hid::stream_params_t    params_in;
-    hid::StreamPrefix       prefix_in;
+    hid::stream::stream_params_t    params_in;
+    hid::stream::StreamPrefix       prefix_in;
 
-    bool                    is_exp_valid;
-    bool                    is_expired;
-    struct timeval          tv;
+    bool                            is_exp_valid;
+    bool                            is_expired;
+    struct timeval                  tv;
 
-    params_out.command = hid::StreamCmd::STREAM_CMD_REQUEST;
-    params_out.code = 100;
-    params_out.len = 578;
+    params_out.command  = hid::stream::StreamCmd::STREAM_CMD_REQUEST;
+    params_out.code     = 100;
+    params_out.len      = 578;
 
     prefix_out.Format (params_out, storage);
     prefix_out.SetTimeout (60 * 1000, storage);

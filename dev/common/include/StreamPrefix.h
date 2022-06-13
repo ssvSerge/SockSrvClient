@@ -9,6 +9,8 @@
 
 namespace hid {
 
+namespace stream {
+
     #define PREFIX_MAGIC    (0x37464564)
 
     enum class StreamCmd : uint32_t {
@@ -35,7 +37,7 @@ namespace hid {
 
         public:
 
-            bool Format (const stream_params_t& params, hid::serializer_bin_t& storage) const {
+            bool Format (const stream_params_t& params, ::hid::types::storage_t& storage) const {
 
                 bool ret_val = false;
 
@@ -65,7 +67,7 @@ namespace hid {
                 return ret_val;
             }
 
-            bool SetTimeout ( uint32_t timeout_ms, hid::serializer_bin_t& storage ) const {
+            bool SetTimeout ( uint32_t timeout_ms, ::hid::types::storage_t& storage ) const {
 
                 bool ret_val = false;
 
@@ -93,7 +95,7 @@ namespace hid {
                 return ret_val;
             }
 
-            bool Load ( const hid::serializer_bin_t& storage, stream_params_t& params ) const {
+            bool Load ( const ::hid::types::storage_t& storage, stream_params_t& params ) const {
 
                 bool ret_val = false;
 
@@ -111,7 +113,7 @@ namespace hid {
                 return ret_val;
             }
 
-            bool ExpirationTimeValid ( const hid::serializer_bin_t& storage, bool& is_valid ) const  {
+            bool ExpirationTimeValid ( const ::hid::types::storage_t& storage, bool& is_valid ) const  {
 
                 bool ret_val = false;
 
@@ -131,13 +133,13 @@ namespace hid {
                 return ret_val;
             }
 
-            bool ExpirationTimeGet ( const hid::serializer_bin_t& storage, bool& is_expired, struct timeval& tv ) const {
+            bool ExpirationTimeGet ( const ::hid::types::storage_t& storage, bool& is_expired, struct timeval& tv ) const {
 
                 bool ret_val = false;
 
                 bool is_expiration_defined = false;
 
-                is_expired = true; // Assumee we're expired.
+                is_expired = true; // Assume we're expired.
                 tv.tv_sec  = 0;    // Seconds
                 tv.tv_usec = 0;    // microseconds
 
@@ -179,7 +181,7 @@ namespace hid {
 
             }
 
-            bool Valid ( const hid::serializer_bin_t& storage ) const {
+            bool Valid ( const ::hid::types::storage_t& storage ) const {
                 
                 bool ret_val = false;
 
@@ -218,6 +220,8 @@ namespace hid {
             }
 
     };
+
+}
 
 }
 

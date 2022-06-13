@@ -28,7 +28,7 @@ int main ( void ) {
     WSADATA             wsaData;
 
     wVersionRequested = MAKEWORD(2, 2);
-    WSAStartup(wVersionRequested, &wsaData);
+    (void) WSAStartup(wVersionRequested, &wsaData);
 
     do {
 
