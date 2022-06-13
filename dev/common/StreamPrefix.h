@@ -5,6 +5,7 @@
 
 #include <chrono>
 #include <ctime>
+#include <cstring>
 
 namespace hid {
 
@@ -89,7 +90,7 @@ namespace hid {
                     ret_val = true;
                 }
 
-                return true;
+                return ret_val;
             }
 
             bool Load ( const hid::serializer_bin_t& storage, stream_params_t& params ) const {

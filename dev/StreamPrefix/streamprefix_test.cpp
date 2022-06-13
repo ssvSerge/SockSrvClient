@@ -21,7 +21,7 @@ int main () {
     params_out.len = 578;
 
     prefix_out.Format (params_out, storage);
-    prefix_out.SetTimeout (60 * 1000, storage);
+    prefix_out.SetTimeout (5 * 1000, storage);
 
     prefix_in.Valid (storage);
     prefix_in.Load (storage, params_in);

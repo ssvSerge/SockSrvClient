@@ -14,14 +14,14 @@
 namespace hid {
 
     // Reader and Writer must be synchronized with the length of variables.
-    // There mighe be inconsistence with STORE(int) and LOAD(int).
+    // There might be inconsistence with STORE(int) and LOAD(int).
     // It is recommended to use implicit size declaration (int32_t or similar).
     static_assert ( sizeof(uint8_t)     == 1, "Wrong size of uint8_t" );
     static_assert ( sizeof(uint16_t)    == 2, "Wrong size of uint16_t" );
     static_assert ( sizeof(uint32_t)    == 4, "Wrong size of uint32_t" );
     static_assert ( sizeof(uint64_t)    == 8, "Wrong size of uint64_t" );
     static_assert ( sizeof(int)         == 4, "Wrong size of int" );
-    static_assert ( sizeof(long)        == 4, "Wrong size of long" );
+    static_assert ( sizeof(long)        == 8, "Wrong size of long" );
     static_assert ( sizeof(long long)   == 8, "Wrong size of long long" );
     static_assert ( sizeof(size_t)      == 8, "Wrong size of size_t" );
     static_assert ( sizeof(float)       == 4, "Wrong size of float" );
