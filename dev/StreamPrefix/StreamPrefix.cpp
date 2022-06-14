@@ -20,11 +20,11 @@ int main () {
     params_out.code     = 100;
     params_out.len      = 578;
 
-    prefix_out.Format (params_out, storage);
+    prefix_out.SetParams (params_out, storage);
     prefix_out.SetTimeout (60 * 1000, storage);
 
     prefix_in.Valid (storage);
-    prefix_in.Load (storage, params_in);
+    prefix_in.GetParams (storage, params_in);
     prefix_in.ExpirationTimeValid (storage, is_exp_valid);
 
     while( true ) {

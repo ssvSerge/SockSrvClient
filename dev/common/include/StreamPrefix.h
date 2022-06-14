@@ -14,10 +14,12 @@ namespace stream {
     #define PREFIX_MAGIC    (0x37464564)
 
     enum class StreamCmd : uint32_t {
-        STREAM_CMD_NONE       =   0,
-        STREAM_CMD_REQUEST    = 100,
-        STREAM_CMD_RESPONSE   = 101,
-        STREAM_CMD_PING       = 102
+        STREAM_CMD_NONE             =   0,
+        STREAM_CMD_REQUEST          = 100,
+        STREAM_CMD_RESPONSE         = 101,
+        STREAM_CMD_PING_REQUEST     = 102,
+        STREAM_CMD_PING_RESPONSE    = 103,
+        STREAM_CMD_ERROR            = 104
     };
 
     class stream_params_t {
@@ -37,13 +39,13 @@ namespace stream {
 
         public:
 
-            bool Format (const stream_params_t& params, ::hid::types::storage_t& storage) const {
+            bool SetParams (const stream_params_t& params, ::hid::types::storage_t& storage) const {
 
                 bool ret_val = false;
 
                 try {
 
-                    const size_t len = PrefixSize ();
+                    const size_t len = size ();
                     storage.resize ( len );
 
                     uint32_t* ptr = reinterpret_cast<uint32_t*> (storage.data ());
@@ -71,7 +73,7 @@ namespace stream {
 
                 bool ret_val = false;
 
-                if ( storage.size () == PrefixSize() ) {
+                if ( storage.size () == size() ) {
 
                     if ( timeout_ms > 0 ) {
 
@@ -95,7 +97,7 @@ namespace stream {
                 return ret_val;
             }
 
-            bool Load ( const ::hid::types::storage_t& storage, stream_params_t& params ) const {
+            bool GetParams ( const ::hid::types::storage_t& storage, stream_params_t& params ) const {
 
                 bool ret_val = false;
 
@@ -119,7 +121,7 @@ namespace stream {
 
                 is_valid = false;
 
-                if ( storage.size () == PrefixSize () ) {
+                if ( storage.size () == size() ) {
 
                     const uint64_t* const expiration_time_ns = reinterpret_cast<const uint64_t*> ( storage.data () + TsOffset() );
 
@@ -185,9 +187,10 @@ namespace stream {
                 
                 bool ret_val = false;
 
-                size_t len = PrefixSize();
+                size_t len = size();
                 
                 if ( storage.size() == len ) {
+
                     const uint32_t* const ptr = reinterpret_cast<const uint32_t*> ( storage.data() );
 
                     uint32_t crc = 0;
@@ -202,9 +205,7 @@ namespace stream {
                 return ret_val;                
             }
 
-        private:
-
-            constexpr size_t PrefixSize() const {
+            constexpr size_t size() const {
                 // +  0 uint32_t     magic
                 // +  4 uint32_t     command
                 // +  8 uint32_t     code
@@ -215,10 +216,11 @@ namespace stream {
                 return 28;
             }
 
+        private:
+
             constexpr int TsOffset() const {
                 return 12;
             }
-
     };
 
 }

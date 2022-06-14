@@ -52,7 +52,9 @@ namespace socket {
             void close          ();
 
         public:
+            ::hid::types::storage_t     inp_hdr;
             ::hid::types::storage_t     inp_data;
+            ::hid::types::storage_t     out_hdr;
             ::hid::types::storage_t     out_data;
             sock_transaction_id_t       m_idx;
             sock_socket_t               m_sock;
@@ -70,7 +72,7 @@ namespace socket {
 
     typedef std::list<sock_transaction_t> sock_transaction_list_t;
 
-    typedef void (*ev_handler_t) (::hid::types::storage_t& in_data, ::hid::types::storage_t& out_data );
+    typedef void (*ev_handler_t) ( const ::hid::types::storage_t& in_data, ::hid::types::storage_t& out_data, int& error_code );
 
     typedef std::future<bool>           sock_thread_t;
     typedef std::list<sock_thread_t>    clients_list_t;
@@ -97,8 +99,6 @@ namespace socket {
             bool  ConnMoveToExpired ();
             bool  ConnProcessExpired ();
 
-            bool  check_server_socket ( os_sock_t& server_socket, bool& restarted );
-
         private:
             std::mutex          m_controller;
 
@@ -110,6 +110,8 @@ namespace socket {
 
             std::string         m_port;
             conn_type_t         m_conn_type;
+
+            ev_handler_t        m_ev_handler;
     };
 
     class SocketClient {
@@ -120,16 +122,8 @@ namespace socket {
 
         public:
             bool Connect ( const char* const port, conn_type_t conn_type );
+            void Close ();
             bool Transaction ( std::chrono::milliseconds delayMs, const ::hid::types::storage_t& out_fame, ::hid::types::storage_t& in_frame );
-
-        private:
-            bool send_frame ( const ::hid::types::storage_t& out_frame, bool re_connect_enabled );
-            bool recv_frame ( ::hid::types::storage_t& inp_frame );
-            bool sock_tx ( const ::hid::types::storage_t& out_frame, size_t& tx_offset );
-            bool sock_rx ( ::hid::types::storage_t& inp_frame, size_t& rx_offset );
-            void sock_close ();
-            void sock_open ();
-            bool sock_connect ();
 
         private:
             std::string   m_port;
