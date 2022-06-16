@@ -158,18 +158,23 @@ static bool socket_accept ( os_sock_t server_sock, os_sock_t& client_sock ) {
     return ret_val;
 }
 
-static bool socket_connect ( os_sock_t sock, const std::string port ) {
+static bool socket_connect ( os_sock_t sock, conn_type_t conn_type, const std::string port ) {
 
     bool ret_val = false;
-    int  io_res  = 0;
 
-    struct sockaddr_un serveraddr = {};
-    serveraddr.sun_family = AF_UNIX;
-    strncpy ( serveraddr.sun_path, port.c_str(), UNIX_PATH_MAX-1 );
+    if ( conn_type == conn_type_t::CONN_TYPE_FILE ) {
+        int  io_res  = 0;
 
-    io_res = connect ( sock, (struct sockaddr*)&serveraddr, (int)SUN_LEN(&serveraddr) );
-    if ( io_res >= 0 ) {
-        ret_val = true;
+        struct sockaddr_un serveraddr = {};
+        serveraddr.sun_family = AF_UNIX;
+        strncpy ( serveraddr.sun_path, port.c_str(), UNIX_PATH_MAX-1 );
+
+        io_res = connect ( sock, (struct sockaddr*)&serveraddr, (int)SUN_LEN(&serveraddr) );
+        if ( io_res >= 0 ) {
+            ret_val = true;
+        }
+    }
+    if ( conn_type == conn_type_t::CONN_TYPE_SOCK ) {
     }
 
     return ret_val;
@@ -296,32 +301,7 @@ static bool frame_rx ( os_sock_t sock, ::hid::types::storage_t& inp_frame ) {
 sock_transaction_t::sock_transaction_t () {
 
     m_closed = false;
-    m_sock   = SOCK_INVALID_SOCK;
     m_idx    = TRANSACTION_INVALID_IDX;
-}
-
-sock_transaction_t::~sock_transaction_t () {
-
-}
-
-sock_transaction_t::sock_transaction_t ( const sock_transaction_t& ref ) {
-    move_to_me ( ref );
-};
-
-void sock_transaction_t::move_to_me ( const sock_transaction_t& ref ) {
-
-    this->m_start_time      = ref.m_start_time;
-    this->m_commit_time     = ref.m_commit_time;
-    this->m_expiration_time = ref.m_expiration_time;
-
-    this->m_idx  = ref.m_idx;
-    this->m_sock = ref.m_sock;
-
-    this->inp_data = std::move ( const_cast<sock_transaction_t&> (ref).inp_data );
-    this->out_data = std::move ( const_cast<sock_transaction_t&> (ref).out_data );
-
-    const_cast<sock_transaction_t&> (ref).m_idx  = TRANSACTION_INVALID_IDX;
-    const_cast<sock_transaction_t&> (ref).m_sock = SOCK_INVALID_SOCK;
 }
 
 void sock_transaction_t::checkpoint_set ( sock_checkpoint_type_t point_type ) {
@@ -489,6 +469,11 @@ void SocketServer::Service () {
     return;
 }
 
+void SocketServer::SetHandler ( ev_handler_t handler ) {
+
+    m_ev_handler = handler;
+}
+
 bool SocketServer::Start ( const char* const port, conn_type_t conn_type ) {
 
     bool ret_val = false;
@@ -544,8 +529,8 @@ bool SocketServer::Shell ( os_sock_t socket ) {
     ::hid::stream::stream_params_t  out_params;
     ::hid::types::storage_t         out_hdr;
     ::hid::types::storage_t         out_pay;
-    int                             out_err_code;
 
+    int  out_err_code;
     bool io_res;
 
     while ( ! m_stop ) {
@@ -556,6 +541,7 @@ bool SocketServer::Shell ( os_sock_t socket ) {
         if ( ! io_res ) {
            break;
         }
+        printf ("inp_hdr \r\n");
 
         io_res = prefix.Valid ( inp_hdr );
         if ( ! io_res ) {
@@ -569,6 +555,8 @@ bool SocketServer::Shell ( os_sock_t socket ) {
         if ( ! io_res ) {
             break;
         }
+
+        printf ( "inp_pay \r\n" );
 
         if ( inp_params.command == ::hid::stream::StreamCmd::STREAM_CMD_PING_REQUEST ) {
             out_params.command = ::hid::stream::StreamCmd::STREAM_CMD_PING_RESPONSE;
@@ -594,11 +582,16 @@ bool SocketServer::Shell ( os_sock_t socket ) {
             break;
         }
 
+        printf ( "out_hdr \r\n" );
+
         io_res = frame_tx ( socket, out_pay );
         if ( !io_res ) {
             break;
         }
 
+        printf ( "out_pay \r\n" );
+
+        printf ( "! close \r\n" );
     }
 
     socket_close ( socket );

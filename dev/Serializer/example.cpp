@@ -1,179 +1,91 @@
-#include <string>
-#include <vector>
+// #include <stdio.h>
+// #include <netdb.h>
+// #include <netinet/in.h>
+// #include <stdlib.h>
+// #include <string.h>
+// #include <sys/socket.h>
+// #include <sys/types.h>
 
-#include <Serializer.h>
 
-typedef struct tag_media_info {
-    std::string     payload;
-    int             payload_type = 0;
-}   media_info_t;
+#define MAX 80
+#define PORT 8080
+#define SA struct sockaddr
 
-typedef std::vector<media_info_t>   media_list_t;
+// Function designed for chat between client and server.
+void func ( int connfd ) {
+    char buff [MAX];
+    int n;
+    // infinite loop for chat
+    for( ;;) {
 
-class V100_command {
+        // bzero ( buff, MAX );
 
-    public:
-        void LoadParameters () {
-            // Host side. Prepare parameters required at device side.
-            request_param1 = 123;
-            request_param2 = 456;
-            request_param3 = 789;
+        // read the message from client and copy it in buffer
+        read ( connfd, buff, sizeof ( buff ) );
+        // print buffer which contains the client contents
+        printf ( "From client: %s\t To client : ", buff );
+        bzero ( buff, MAX );
+        n = 0;
+        // copy server message in the buffer
+        while( (buff [n++] = getchar ()) != '\n' )
+            ;
+
+        // and send that buffer to client
+        write ( connfd, buff, sizeof ( buff ) );
+
+        // if msg contains "Exit" then server exit and chat ended.
+        if( strncmp ( "exit", buff, 4 ) == 0 ) {
+            printf ( "Server Exit...\n" );
+            break;
         }
+    }
+}
 
-        void ExecCommand () {
-            // Device side. Simulate command execution. Prepare response.
-            for ( size_t i = 0; i < 5; i++ ) {
-                media_info_t new_item;
-                new_item.payload = "abc";
-                new_item.payload_type = 3;
-                response_media.emplace_back ( std::move (new_item) );
-            }
-        }
-
-        bool Compare ( const V100_command& ref ) {
-
-            // Stuff command. Not required in the real application.
-            bool ret_val = true;
-            
-            if ( this->request_param1 != ref.request_param1 ) {
-                ret_val = false;
-            }
-            if ( this->request_param2 != ref.request_param2 ) {
-                ret_val = false;
-            }
-            if ( this->request_param3 != ref.request_param3 ) {
-                ret_val = false;
-            }
-
-            if ( this->response_media.size () != ref.response_media.size () ) {
-                ret_val = false;
-            } else {
-                for ( size_t i = 0; i < this->response_media.size (); i++ ) {
-                    if( this->response_media [i].payload != ref.response_media [i].payload ) {
-                        ret_val = false;
-                    }
-                    if( this->response_media [i].payload_type != ref.response_media [i].payload_type ) {
-                        ret_val = false;
-                    }
-                }
-            }
-
-            return ret_val;
-        }
-
-    public:
-
-        bool ParametersExport ( ::hid::types::storage_t& storage ) {
-            // (Step 1) Host side. Serialize parameters to external storage.
-            hid::Serializer hid_tool;
-            hid_tool.StoreFix ( request_param1, storage );
-            hid_tool.StoreFix ( request_param2, storage );
-            hid_tool.StoreFix ( request_param3, storage );
-            return hid_tool.ExportStatus ();
-        }
-
-        bool ParametersImport ( const ::hid::types::storage_t& storage ) {
-            // (Step 2) Device side. Load parameters.
-            hid::Serializer hid_tool;
-            hid_tool.LoadFix (storage, request_param1);
-            hid_tool.LoadFix (storage, request_param2);
-            hid_tool.LoadFix (storage, request_param3);
-            return hid_tool.ImportStatus (storage);
-
-        }
-
-        bool ResponseExport ( ::hid::types::storage_t& storage ) {
-            // (Step 3) Device side. Serialize response to external storage.
-            hid::Serializer hid_tool;
-            hid_tool.StoreCnt ( response_media.size(), storage );
-            for( size_t i = 0; i < response_media.size (); i++ ) {
-                hid_tool.StoreVar ( response_media [i].payload, storage );
-                hid_tool.StoreFix ( response_media [i].payload_type, storage );
-            }
-            return hid_tool.ExportStatus ();
-        }
-
-        bool ResponseImport ( const ::hid::types::storage_t& storage ) {
-            // (Step 4) Host side. Load response.
-            hid::Serializer hid_tool;
-            size_t cnt;
-            hid_tool.LoadCnt (storage, cnt);
-            for ( size_t i = 0; i < cnt; i++ ) {
-                media_info_t new_item;
-                hid_tool.LoadVar ( storage, new_item.payload );
-                hid_tool.LoadFix ( storage, new_item.payload_type );
-                response_media.emplace_back ( std::move(new_item) );
-            }
-            return hid_tool.ImportStatus (storage);
-        }
-
-    protected:
-        char            request_param1 = 0;
-        int             request_param2 = 0;
-        size_t          request_param3 = 0;
-
-    protected:
-        media_list_t    response_media;
-};
-
-
+// Driver function
 int main () {
+    int sockfd, connfd, len;
+    struct sockaddr_in servaddr, cli;
 
-    V100_command                host_object;
-    ::hid::types::storage_t     host_transport_transaction_out;
-    ::hid::types::storage_t     host_transport_transaction_in;
+    // socket create and verification
+    sockfd = socket ( AF_INET, SOCK_STREAM, 0 );
+    if( sockfd == -1 ) {
+        printf ( "socket creation failed...\n" );
+        exit ( 0 );
+    } else
+        printf ( "Socket successfully created..\n" );
+    bzero ( &servaddr, sizeof ( servaddr ) );
 
-    V100_command                device_object;
-    ::hid::types::storage_t     device_transport_transaction_in;
-    ::hid::types::storage_t     device_transport_transaction_out;
+    // assign IP, PORT
+    servaddr.sin_family = AF_INET;
+    servaddr.sin_addr.s_addr = htonl ( INADDR_ANY );
+    servaddr.sin_port = htons ( PORT );
 
+    // Binding newly created socket to given IP and verification
+    if( (bind ( sockfd, (SA*) &servaddr, sizeof ( servaddr ) )) != 0 ) {
+        printf ( "socket bind failed...\n" );
+        exit ( 0 );
+    } else
+        printf ( "Socket successfully binded..\n" );
 
-    // Host side.
-    {   // Prepare input parameters.
-        host_object.LoadParameters ();
+    // Now server is ready to listen and verification
+    if( (listen ( sockfd, 5 )) != 0 ) {
+        printf ( "Listen failed...\n" );
+        exit ( 0 );
+    } else
+        printf ( "Server listening..\n" );
+    len = sizeof ( cli );
 
-        {   // Optional but strongly recommended.
-            // Estimate the required size and reserve memory.
-            host_transport_transaction_out.reserve ( 1024 );
-        }
+    // Accept the data packet from client and verification
+    connfd = accept ( sockfd, (SA*) &cli, &len );
+    if( connfd < 0 ) {
+        printf ( "server accept failed...\n" );
+        exit ( 0 );
+    } else
+        printf ( "server accept the client...\n" );
 
-        // Serialize parameters out.
-        host_object.ParametersExport (host_transport_transaction_out);
-    }
+    // Function for chatting between client and server
+    func ( connfd );
 
-    // Simulate data transfer (host -> device).
-    {   // Transfer data from host to device.
-        device_transport_transaction_in = host_transport_transaction_out;
-    }
-
-    // Device side.
-    {   // Serialize parameters in.
-        device_object.ParametersImport ( device_transport_transaction_in );
-
-        // Execute command and prepare response.
-        device_object.ExecCommand ();
-
-        {   // Optional but strongly recommended.
-            // Estimate the required size and reserve memory.
-            device_transport_transaction_out.reserve ( 1024 );
-        }
-
-        // Export response. 
-        device_object.ResponseExport (device_transport_transaction_out);
-    }
-
-    // Simulate data transfer. (device -> host).
-    {   // Transfer from device to host.
-        host_transport_transaction_in = device_transport_transaction_out;
-    }
-
-    // Host side.
-    {   // Import response.
-        host_object.ResponseImport (host_transport_transaction_in);
-    }
-
-    // Compare objects. Both must be the same.
-    host_object.Compare (device_object);
-
-    return 0;
+    // After chatting close the socket
+    close ( sockfd );
 }

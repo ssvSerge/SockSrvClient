@@ -4,8 +4,11 @@
 #include <StreamPrefix.h>
 
 
-const char* const           port        = "/tmp/serv.sock";
-hid::socket::conn_type_t    conn_type   = hid::socket::conn_type_t::CONN_TYPE_FILE;
+// const char* const           port        = "/tmp/serv.sock";
+// hid::socket::conn_type_t    conn_type   = hid::socket::conn_type_t::CONN_TYPE_FILE;
+
+const char* const           port = "4437";
+hid::socket::conn_type_t    conn_type = hid::socket::conn_type_t::CONN_TYPE_SOCK;
 
 
 int main() {
@@ -19,7 +22,7 @@ int main() {
 
 
     srv.Start ( port, conn_type );
-    std::this_thread::sleep_for ( std::chrono::milliseconds ( 1000 ) );
+    std::this_thread::sleep_for ( std::chrono::milliseconds ( 10000 ) );
 
     cli.Connect ( port, conn_type );
     for ( int i = 0; i < 10; i++ ) {

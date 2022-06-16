@@ -40,24 +40,17 @@ namespace socket {
 
         public:
             sock_transaction_t  ();
-           ~sock_transaction_t  ();
-            sock_transaction_t  ( const sock_transaction_t& ref );
+            sock_transaction_t  ( const sock_transaction_t& ref ) = delete;
             sock_transaction_t  operator= ( const sock_transaction_t& ref ) = delete;
 
         public:
             void checkpoint_set ( sock_checkpoint_type_t point_type );
             void set_timeout    ( sock_duration_ms_t timeout_ms );
-            void move_to_me     ( const sock_transaction_t& ref );
             bool is_expired     ();
             void close          ();
 
         public:
-            ::hid::types::storage_t     inp_hdr;
-            ::hid::types::storage_t     inp_data;
-            ::hid::types::storage_t     out_hdr;
-            ::hid::types::storage_t     out_data;
             sock_transaction_id_t       m_idx;
-            sock_socket_t               m_sock;
 
         private:
             bool                        m_closed;
@@ -85,8 +78,6 @@ namespace socket {
 
         public:
             void  SetHandler ( ev_handler_t handler );
-
-        public:
             bool  Start ( const char* const port, conn_type_t conn_type );
             void  Stop  ( void );
 
