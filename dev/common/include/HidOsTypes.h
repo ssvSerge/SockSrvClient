@@ -4,6 +4,7 @@
 #ifdef _WIN32 
 
     #include <WinSock2.h>
+    #include <ws2tcpip.h>
     #include <afunix.h>
 
     #define  SOCK_INVALID_SOCK      ( -1 )

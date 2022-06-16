@@ -22,19 +22,20 @@ int main() {
 
 
     srv.Start ( port, conn_type );
-    std::this_thread::sleep_for ( std::chrono::milliseconds ( 10000 ) );
+    std::this_thread::sleep_for ( std::chrono::milliseconds ( 1000 ) );
 
     cli.Connect ( port, conn_type );
-    for ( int i = 0; i < 10; i++ ) {
+    for ( int i = 0; i < 5; i++ ) {
         out_fame.resize ( out_fame.size () + 10 );
         cli.Transaction ( std::chrono::milliseconds ( 0 ), out_fame, inp_frame );
         std::this_thread::sleep_for ( std::chrono::milliseconds ( 1000 ) );
     }
     cli.Close();
+    srv.Stop ();
 
-    for ( ; ; ) {
-        std::this_thread::sleep_for ( std::chrono::milliseconds ( 5000 ) );
-    }
+    // for ( ; ; ) {
+    std::this_thread::sleep_for ( std::chrono::milliseconds ( 1000 ) );
+    // }
 
-    std::cout << "Hello World!\n";
+    return 0;
 }

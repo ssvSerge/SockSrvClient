@@ -101,6 +101,10 @@ namespace stream {
 
                 bool ret_val = false;
 
+                params.command = StreamCmd::STREAM_CMD_NONE;
+                params.code    = 0;
+                params.len     = 0;
+
                 if ( Valid ( storage ) ) {
 
                     const uint32_t* const ptr = reinterpret_cast<const uint32_t*> ( storage.data() );

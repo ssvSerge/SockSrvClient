@@ -15,7 +15,7 @@ constexpr int    SOCK_MAX_ERRORS_CNT     = 15;
 
 //---------------------------------------------------------------------------//
 
-static void dummy_ev_handler ( const ::hid::types::storage_t& in_data, ::hid::types::storage_t& out_data, int& error_code ) {
+static void dummy_ev_handler ( const hid::types::storage_t& in_data, hid::types::storage_t& out_data, int& error_code ) {
 
     out_data.resize(0);
     error_code = 100;
@@ -161,26 +161,36 @@ static bool socket_accept ( os_sock_t server_sock, os_sock_t& client_sock ) {
 static bool socket_connect ( os_sock_t sock, conn_type_t conn_type, const std::string port ) {
 
     bool ret_val = false;
+    int  io_res  = 0;
+
+    struct sockaddr_un addr_file    = {};
+    struct sockaddr_in addr_sock    = {};
+    struct sockaddr*   con_addr_ptr = nullptr;
+    int                con_addr_len = 0;
 
     if ( conn_type == conn_type_t::CONN_TYPE_FILE ) {
-        int  io_res  = 0;
-
-        struct sockaddr_un serveraddr = {};
-        serveraddr.sun_family = AF_UNIX;
-        strncpy ( serveraddr.sun_path, port.c_str(), UNIX_PATH_MAX-1 );
-
-        io_res = connect ( sock, (struct sockaddr*)&serveraddr, (int)SUN_LEN(&serveraddr) );
-        if ( io_res >= 0 ) {
-            ret_val = true;
-        }
+        addr_file.sun_family = AF_UNIX;
+        strncpy ( addr_file.sun_path, port.c_str(), UNIX_PATH_MAX-1 );
+        con_addr_ptr = (struct sockaddr*) &addr_file;
+        con_addr_len = (int) SUN_LEN ( &addr_file );
     }
     if ( conn_type == conn_type_t::CONN_TYPE_SOCK ) {
+        int port_ = atoi (port.c_str());
+        addr_sock.sin_family = AF_INET;
+        addr_sock.sin_port = htons(port_);
+        (void)inet_pton ( AF_INET, "127.0.0.1", &addr_sock.sin_addr );
+        con_addr_ptr = (struct sockaddr*) &addr_sock;
+        con_addr_len = sizeof(addr_sock);
     }
 
+    io_res = connect ( sock, con_addr_ptr, con_addr_len );
+    if ( io_res >= 0 ) {
+        ret_val = true;
+    }
     return ret_val;
 }
 
-static bool socket_tx ( os_sock_t sock, const ::hid::types::storage_t& out_frame, size_t& tx_offset ) {
+static bool socket_tx ( os_sock_t sock, const hid::types::storage_t& out_frame, size_t& tx_offset ) {
 
     bool ret_val = false;
 
@@ -208,7 +218,7 @@ static bool socket_tx ( os_sock_t sock, const ::hid::types::storage_t& out_frame
     return ret_val;
 }
 
-static bool socket_rx ( os_sock_t sock, ::hid::types::storage_t& inp_frame, size_t& rx_offset ) {
+static bool socket_rx ( os_sock_t sock, hid::types::storage_t& inp_frame, size_t& rx_offset ) {
 
     bool ret_val = false;
 
@@ -225,7 +235,7 @@ static bool socket_rx ( os_sock_t sock, ::hid::types::storage_t& inp_frame, size
             int io_res;
             io_res = ::recv ( sock, (char*) dst_pos, data_part, 0 );
 
-            if( io_res > 0 ) {
+            if ( io_res > 0 ) {
                 rx_offset += io_res;
                 ret_val = true;
             }
@@ -236,7 +246,7 @@ static bool socket_rx ( os_sock_t sock, ::hid::types::storage_t& inp_frame, size
     return ret_val;
 }
 
-static bool frame_tx ( os_sock_t sock, const ::hid::types::storage_t& out_frame ) {
+static bool frame_tx ( os_sock_t sock, const hid::types::storage_t& out_frame ) {
 
     bool ret_val = false;
 
@@ -266,7 +276,7 @@ static bool frame_tx ( os_sock_t sock, const ::hid::types::storage_t& out_frame 
     return ret_val;
 }
 
-static bool frame_rx ( os_sock_t sock, ::hid::types::storage_t& inp_frame ) {
+static bool frame_rx ( os_sock_t sock, hid::types::storage_t& inp_frame ) {
 
     bool ret_val = false;
 
@@ -306,7 +316,7 @@ sock_transaction_t::sock_transaction_t () {
 
 void sock_transaction_t::checkpoint_set ( sock_checkpoint_type_t point_type ) {
 
-    ::hid::socket::sock_checkpoint_t ref = sock_time_src_t::now();
+    hid::socket::sock_checkpoint_t ref = sock_time_src_t::now();
 
     switch ( point_type ) {
         case sock_checkpoint_type_t::CHECKPOINT_START:
@@ -521,14 +531,14 @@ void SocketServer::Stop ( void ) {
 
 bool SocketServer::Shell ( os_sock_t socket ) {
 
-    ::hid::stream::StreamPrefix     prefix;
-    ::hid::stream::stream_params_t  inp_params;
-    ::hid::types::storage_t         inp_hdr;
-    ::hid::types::storage_t         inp_pay;
+    hid::stream::StreamPrefix     prefix;
+    hid::stream::stream_params_t  inp_params = {};
+    hid::types::storage_t         inp_hdr;
+    hid::types::storage_t         inp_pay;
 
-    ::hid::stream::stream_params_t  out_params;
-    ::hid::types::storage_t         out_hdr;
-    ::hid::types::storage_t         out_pay;
+    hid::stream::stream_params_t  out_params = {};
+    hid::types::storage_t         out_hdr;
+    hid::types::storage_t         out_pay;
 
     int  out_err_code;
     bool io_res;
@@ -558,17 +568,17 @@ bool SocketServer::Shell ( os_sock_t socket ) {
 
         printf ( "inp_pay \r\n" );
 
-        if ( inp_params.command == ::hid::stream::StreamCmd::STREAM_CMD_PING_REQUEST ) {
-            out_params.command = ::hid::stream::StreamCmd::STREAM_CMD_PING_RESPONSE;
+        if ( inp_params.command == hid::stream::StreamCmd::STREAM_CMD_PING_REQUEST ) {
+            out_params.command = hid::stream::StreamCmd::STREAM_CMD_PING_RESPONSE;
             out_params.code = 0;
             out_pay.resize (0);
         } else 
-        if ( inp_params.command == ::hid::stream::StreamCmd::STREAM_CMD_REQUEST ) {
+        if ( inp_params.command == hid::stream::StreamCmd::STREAM_CMD_REQUEST ) {
             (m_ev_handler) ( inp_pay, out_pay, out_err_code );
-            out_params.command = ::hid::stream::StreamCmd::STREAM_CMD_RESPONSE;
+            out_params.command = hid::stream::StreamCmd::STREAM_CMD_RESPONSE;
             out_params.code = out_err_code;
         } else {
-            out_params.command = ::hid::stream::StreamCmd::STREAM_CMD_ERROR;
+            out_params.command = hid::stream::StreamCmd::STREAM_CMD_ERROR;
             out_params.code = 0;
             out_pay.resize ( 0 );
         }
@@ -585,7 +595,7 @@ bool SocketServer::Shell ( os_sock_t socket ) {
         printf ( "out_hdr \r\n" );
 
         io_res = frame_tx ( socket, out_pay );
-        if ( !io_res ) {
+        if ( ! io_res ) {
             break;
         }
 
@@ -654,6 +664,9 @@ SocketClient::~SocketClient () {
 
 bool SocketClient::Connect ( const char* const portStr, conn_type_t type ) {
 
+    // Do not connect immediatelly. 
+    // Just keep parameters where (and how) to connect.
+    // Connection will be established in the transaction.
     m_port = portStr;
     m_conn_type = type;
 
@@ -665,68 +678,72 @@ void SocketClient::Close () {
     socket_close( m_sock );
 }
 
-bool SocketClient::Transaction ( std::chrono::milliseconds delayMs, const ::hid::types::storage_t& out_fame, ::hid::types::storage_t& in_frame ) {
+bool SocketClient::Transaction ( std::chrono::milliseconds delayMs, const hid::types::storage_t& out_fame, hid::types::storage_t& in_frame ) {
 
     bool ret_val = true;
     bool io_res  = false;
 
-    ::hid::types::storage_t         out_hdr;
-    ::hid::types::storage_t         inp_hdr;
-    ::hid::stream::StreamPrefix     prefix;
-    ::hid::stream::stream_params_t  params;
+    try {
+        hid::types::storage_t         out_hdr;
+        hid::types::storage_t         inp_hdr;
+        hid::stream::StreamPrefix     prefix;
+        hid::stream::stream_params_t  params = {};
 
-    params.command  = ::hid::stream::StreamCmd::STREAM_CMD_REQUEST;
-    params.code     = 0;
-    params.len      = static_cast<uint32_t> (out_fame.size ());
+        params.command = hid::stream::StreamCmd::STREAM_CMD_REQUEST;
+        params.len = static_cast<uint32_t> (out_fame.size ());
+        prefix.SetParams ( params, out_hdr );
 
-    prefix.SetParams ( params, out_hdr );
-
-    io_res = frame_tx ( m_sock, out_hdr );
-
-    if ( ! io_res ) {
-        socket_close ( m_sock );
-        socket_open ( m_conn_type, m_sock );
-        socket_connect ( m_sock, m_port );
         io_res = frame_tx ( m_sock, out_hdr );
+        if ( ! io_res ) {
+            // TTRACE ("Attempt to (re)Connect to server.");
+            socket_close ( m_sock );
+            socket_open ( m_conn_type, m_sock );
+            socket_connect ( m_sock, m_conn_type, m_port );
+            io_res = frame_tx ( m_sock, out_hdr );
+        }
+
+        if ( ! io_res ) {
+            // TTRACE ("Transaction failed. Can't send prefix");
+            goto EXIT;
+        }
+
+        io_res = frame_tx ( m_sock, out_fame );
+        if ( ! io_res ) {
+            // TTRACE ("Transaction failed. Can't send payload");
+            goto EXIT;
+        }
+
+        inp_hdr.resize ( prefix.size() );
+        io_res = frame_rx ( m_sock, inp_hdr );
+        if ( ! io_res ) {
+            // TTRACE ("Transaction failed. Can't read prefix");
+            goto EXIT;
+        }
+
+        io_res = prefix.Valid ( inp_hdr );
+        if ( ! io_res ) {
+            // TTRACE ("Transaction failed. Wrong prefix received.");
+            goto EXIT;
+        }
+
+        prefix.GetParams ( inp_hdr, params );
+        in_frame.resize ( params.len );
+
+        io_res = frame_rx ( m_sock, in_frame );
+        if ( ! io_res ) {
+            // TTRACE ("Transaction failed. Can't receive payload.");
+            goto EXIT;
+        }
+
+        ret_val = true;
+
+    }   catch( ... ) {
+        // TTRACE ("Transaction failed. Internal error.");
     }
-
-    if ( ! io_res ) {
-        ret_val = false;
-        goto EXIT;
-    }
-
-    io_res = frame_tx ( m_sock, out_fame );
-    if ( ! io_res ) {
-        ret_val = false;
-        goto EXIT;
-    }
-
-    inp_hdr.resize ( prefix.size() );
-    io_res = frame_rx ( m_sock, inp_hdr );
-    if ( ! io_res ) {
-        ret_val = false;
-        goto EXIT;
-    }
-
-    io_res = prefix.Valid ( inp_hdr );
-    if ( ! io_res ) {
-        ret_val = false;
-        goto EXIT;
-    }
-
-    prefix.GetParams ( inp_hdr, params );
-    in_frame.resize ( params.len );
-
-    io_res = frame_rx ( m_sock, in_frame );
-    if ( ! io_res ) {
-        ret_val = false;
-        goto EXIT;
-    }
-
-    ret_val = true;
 
 EXIT:
     if ( ! ret_val ) {
+        // TTRACE ("Transaction failed. Close socked.");
         socket_close ( m_sock );
     }
     return ret_val;

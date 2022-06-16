@@ -65,7 +65,7 @@ namespace socket {
 
     typedef std::list<sock_transaction_t> sock_transaction_list_t;
 
-    typedef void (*ev_handler_t) ( const ::hid::types::storage_t& in_data, ::hid::types::storage_t& out_data, int& error_code );
+    typedef void (*ev_handler_t) ( const hid::types::storage_t& in_data, hid::types::storage_t& out_data, int& error_code );
 
     typedef std::future<bool>           sock_thread_t;
     typedef std::list<sock_thread_t>    clients_list_t;
@@ -114,7 +114,7 @@ namespace socket {
         public:
             bool Connect ( const char* const port, conn_type_t conn_type );
             void Close ();
-            bool Transaction ( std::chrono::milliseconds delayMs, const ::hid::types::storage_t& out_fame, ::hid::types::storage_t& in_frame );
+            bool Transaction ( std::chrono::milliseconds delayMs, const hid::types::storage_t& out_fame, hid::types::storage_t& in_frame );
 
         private:
             std::string   m_port;
