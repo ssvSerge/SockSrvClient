@@ -1,6 +1,14 @@
+#include <chrono>
+#include <iostream>
+#include <iomanip>
+#include <sstream>
+
 #include <SockServerClient.h>
 #include <StreamPrefix.h>
 
+#define  TTRACE              printf
+
+using namespace std::chrono_literals;
 
 #define  SUN_LEN(p)  ((size_t) (( (struct sockaddr_un*) NULL)->sun_path) + strlen ((p)->sun_path))
 
@@ -10,74 +18,151 @@ namespace socket {
 
 //---------------------------------------------------------------------------//
 
-constexpr size_t TRANSACTION_INVALID_IDX =  0;
-constexpr int    SOCK_MAX_ERRORS_CNT     = 15;
+constexpr int    SOCK_MAX_ERRORS_CNT    = 15;
 
 //---------------------------------------------------------------------------//
 
-static void dummy_ev_handler ( const hid::types::storage_t& in_data, hid::types::storage_t& out_data, int& error_code ) {
-
-    out_data.resize(0);
+static void dummy_ev_handler ( 
+    IN    MANDATORY const hid::types::storage_t& in_data, 
+    OUT   MANDATORY hid::types::storage_t&  out_data, 
+    OUT   MANDATORY uint32_t&           error_code 
+) {
+    out_data.resize(20);
     error_code = 100;
 }
 
 //---------------------------------------------------------------------------//
 
-static bool socket_open ( conn_type_t conn_type, os_sock_t& sock ) {
+static bool get_timeval ( 
+    IN    MANDATORY sock_checkpoint_t   end_time, 
+    OUT   MANDATORY struct timeval&     tv 
+) {
 
     bool ret_val = false;
-    int  af_mode = AF_UNSPEC;
 
-    if ( conn_type == conn_type_t::CONN_TYPE_SOCK ) {
-        af_mode = AF_INET;
-    } else
-    if ( conn_type == conn_type_t::CONN_TYPE_FILE ) {
-        af_mode = AF_UNIX;
-    }
-        
-    sock = ::socket ( af_mode, SOCK_STREAM, 0 );
-    if ( sock == SOCK_INVALID_SOCK ) {
-        // TTRACE ( failed to open new socket );
+    tv.tv_sec  = 0;
+    tv.tv_usec = 0;
+
+    sock_checkpoint_t curr_time = sock_time_src_t::now ();
+
+    if ( curr_time < end_time ) {
+
+        std::chrono::duration time_diff = (end_time - curr_time);
+        std::chrono::microseconds mks = std::chrono::duration_cast<std::chrono::microseconds>(time_diff);
+
+        if ( mks.count () > 1000 ) {
+            tv.tv_sec  = static_cast<long> ( mks.count() / 1000000);
+            tv.tv_usec = static_cast<long> ( mks.count() % 1000000);
+            ret_val = true;
+        }
+
     }
 
     return ret_val;
 }
 
-static void socket_close ( os_sock_t& sock ) {
+static std::string tp_to_string ( 
+    IN    OPTIONAL const char* const    prefix, 
+    IN    MANDATORY const sock_checkpoint_t& time 
+) {
 
-    if ( sock != SOCK_INVALID_SOCK ) {
-        os_sockclose ( sock );
+    std::time_t  tt   = sock_time_src_t::to_time_t (time);
+    std::tm      tm   = *std::gmtime(&tt);
+    std::stringstream ss;
+
+    if ( prefix != nullptr ) {
+        ss << prefix;
     }
-    sock = SOCK_INVALID_SOCK;
+
+    ss << std::put_time( &tm, "UTC: %Y-%m-%d %H:%M:%S \r\n" );
+    return ss.str();
 }
 
-static bool socket_bind ( os_sock_t sock, conn_type_t conn_type, const char* const port_str ) {
+static std::string dur_to_string ( 
+    IN    OPTIONAL const char* const    prefix, 
+    IN    MANDATORY const sock_checkpoint_t& start, 
+    IN    MANDATORY const sock_checkpoint_t& end 
+) {
 
-    bool ret_val = false;
+    std::string ret_val;
 
-    #if ( PLATFORM == PLATFORM_WINDOWS )
-    {
+    uint64_t seconds_cnt = std::chrono::duration_cast<std::chrono::seconds>(end.time_since_epoch()).count();
+    if ( seconds_cnt > 0 ) {
+        if ( end > start ) {
+            auto diff = (end - start);
+            auto diff_ms = std::chrono::duration_cast<std::chrono::milliseconds>(diff);
+
+            if ( prefix != nullptr ) {
+                ret_val = prefix;
+            }
+
+            ret_val += "(+";
+            ret_val += std::to_string ( diff_ms.count() );
+            ret_val += "ms) \r\n";
+
+        }
+    }
+
+    return ret_val;
+}
+
+//---------------------------------------------------------------------------//
+
+static void socket_open ( 
+    INOUT MANDATORY sock_state_t&       sock_state, 
+    IN    MANDATORY conn_type_t         conn_type, 
+    INOUT MANDATORY os_sock_t&          sock 
+) {
+
+    if ( sock_state == sock_state_t::SOCK_OK ) {
+
+        int  af_mode = AF_UNSPEC;
+        if ( conn_type == conn_type_t::CONN_TYPE_SOCK ) {
+            af_mode = AF_INET;
+        } else
+        if ( conn_type == conn_type_t::CONN_TYPE_FILE ) {
+            af_mode = AF_UNIX;
+        }
+
+        sock_state = sock_state_t::SOCK_ERR_OPEN;
+
+        sock = ::socket ( af_mode, SOCK_STREAM, 0 );
+        if ( sock != SOCK_INVALID_SOCK ) {
+            sock_state = sock_state_t::SOCK_OK;
+        }
+
+    }
+}
+
+static void socket_bind ( 
+    INOUT MANDATORY sock_state_t&       sock_state, 
+    IN    MANDATORY os_sock_t           sock, 
+    IN    MANDATORY conn_type_t         conn_type, 
+    IN    MANDATORY const char* const   port_str 
+) {
+
+    if ( sock_state == sock_state_t::SOCK_OK ) {
+
         sockaddr_in         local_sock  = {};
         struct sockaddr_un  local_file  = {};
+
         struct sockaddr*    addr_ptr    = nullptr;
         int                 addr_size   = 0;
-
-        int io_res  = 0;
 
         if ( conn_type == conn_type_t::CONN_TYPE_SOCK ) {
 
             int port = atoi ( port_str );
 
             local_sock.sin_family = AF_INET;
-            local_sock.sin_port = htons ( port );
+            local_sock.sin_port   = htons ( port );
 
-            addr_ptr  = reinterpret_cast<struct sockaddr*>(&local_sock);
-            addr_size = static_cast<int> ( sizeof( local_sock ) );
+            addr_ptr  = reinterpret_cast<struct sockaddr*>( &local_sock );
+            addr_size = static_cast<int> ( sizeof(local_sock) );
 
         } else
         if ( conn_type == conn_type_t::CONN_TYPE_FILE ) {
 
-            os_sock_unlink ( port_str );
+            sock_unlink ( port_str );
 
             local_file.sun_family = AF_UNIX;
             strncpy ( local_file.sun_path, port_str, sizeof ( local_file.sun_path ) - 1 );
@@ -87,255 +172,343 @@ static bool socket_bind ( os_sock_t sock, conn_type_t conn_type, const char* con
 
         }
 
-        io_res = bind ( sock, addr_ptr, addr_size );
-        if ( io_res == SOCKET_ERROR ) {
-            ret_val = false; // Success
-        } else {
-            ret_val = true; // Success
+        sock_state = sock_state_t::SOCK_ERR_BIND;
+
+        int io_res = ::bind ( sock, addr_ptr, addr_size );
+        if ( io_res != -1 ) {
+            sock_state = sock_state_t::SOCK_OK;
+        }
+    }
+    
+}
+
+static void socket_listen ( 
+    INOUT MANDATORY sock_state_t&       sock_state, 
+    IN    MANDATORY os_sock_t           sock 
+) {
+
+    if ( sock_state == sock_state_t::SOCK_OK ) {
+
+        sock_state = sock_state_t::SOCK_ERR_LISTEN;
+
+        int listen_res = ::listen ( sock, SOMAXCONN );
+        if ( listen_res == 0 ) {
+            sock_state = sock_state_t::SOCK_OK;
         }
 
     }
-
-    #endif
-
-    return ret_val;
 }
 
-static bool socket_select ( os_sock_t sock, bool& is_timeout ) {
+static void socket_wait ( 
+    INOUT MANDATORY sock_state_t&       sock_state, 
+    IN    MANDATORY os_sock_t           sock, 
+    IN    MANDATORY sock_duration_ms_t  timeout_ns 
+) {
 
-    bool ret_val = false;
+    if ( sock_state == sock_state_t::SOCK_OK ) {
 
-    is_timeout = false;
+        struct timeval  timeout;
+        fd_set          readfds;
 
-    fd_set          readfds;
-    struct timeval  timeout;
+        FD_ZERO ( &readfds );
+        FD_SET ( sock, &readfds );
 
-    FD_ZERO ( &readfds );
-    FD_SET ( sock, &readfds );
+        std::chrono::microseconds mks = std::chrono::duration_cast<std::chrono::microseconds>(timeout_ns);
 
-    timeout.tv_sec  = 5;           // once per 20 seconds.
-    timeout.tv_usec = 200000;      // 
+        timeout.tv_sec = static_cast<long> (mks.count () / 1000000);
+        timeout.tv_usec = static_cast<long> (mks.count () % 1000000);
 
-    int sel_res = select ( (int) (sock + 1), &readfds, NULL, NULL, &timeout );
+        int select_res = select ( (int) (sock + 1), &readfds, NULL, NULL, &timeout );
 
-    if ( sel_res == -1 ) {
-        if ( errno == EWOULDBLOCK ) {
-            sel_res = 0;
+        sock_state = sock_state_t::SOCK_ERR_SELECT;
+
+        if ( select_res > 0 ) {
+            sock_state = sock_state_t::SOCK_OK;
         } else
-        if ( errno == EAGAIN ) {
-            sel_res = 0;
-        }
-    }
-
-    if ( sel_res < 0 ) {
-        // TTRACE ();
-        ret_val = false;
-    } else
-    if ( sel_res == 0 ) {
-        // TTRACE ();
-        is_timeout = true;
-        ret_val = true;
-    } else {
-        is_timeout = false;
-        ret_val = true;
-    }
-
-    return ret_val;
-}
-
-static bool socket_accept ( os_sock_t server_sock, os_sock_t& client_sock ) {
-
-    bool       ret_val = false;
-    os_sock_t  io_res;
-
-    io_res = accept ( server_sock, NULL, NULL );
-
-    if ( io_res != SOCK_INVALID_SOCK ) {
-        client_sock = io_res;
-        ret_val = true;
-    } 
-
-    return ret_val;
-}
-
-static bool socket_connect ( os_sock_t sock, conn_type_t conn_type, const std::string port ) {
-
-    bool ret_val = false;
-    int  io_res  = 0;
-
-    struct sockaddr_un addr_file    = {};
-    struct sockaddr_in addr_sock    = {};
-    struct sockaddr*   con_addr_ptr = nullptr;
-    int                con_addr_len = 0;
-
-    if ( conn_type == conn_type_t::CONN_TYPE_FILE ) {
-        addr_file.sun_family = AF_UNIX;
-        strncpy ( addr_file.sun_path, port.c_str(), UNIX_PATH_MAX-1 );
-        con_addr_ptr = (struct sockaddr*) &addr_file;
-        con_addr_len = (int) SUN_LEN ( &addr_file );
-    }
-    if ( conn_type == conn_type_t::CONN_TYPE_SOCK ) {
-        int port_ = atoi (port.c_str());
-        addr_sock.sin_family = AF_INET;
-        addr_sock.sin_port = htons(port_);
-        (void)inet_pton ( AF_INET, "127.0.0.1", &addr_sock.sin_addr );
-        con_addr_ptr = (struct sockaddr*) &addr_sock;
-        con_addr_len = sizeof(addr_sock);
-    }
-
-    io_res = connect ( sock, con_addr_ptr, con_addr_len );
-    if ( io_res >= 0 ) {
-        ret_val = true;
-    }
-    return ret_val;
-}
-
-static bool socket_tx ( os_sock_t sock, const hid::types::storage_t& out_frame, size_t& tx_offset ) {
-
-    bool ret_val = false;
-
-    if ( out_frame.size () > tx_offset ) {
-        if ( sock != SOCK_INVALID_SOCK ) {
-
-            const uint8_t* src_pos = static_cast<const uint8_t*> (out_frame.data ());
-            src_pos += tx_offset;
-
-            uint32_t data_part;
-            data_part = static_cast<uint32_t> (out_frame.size ());
-            data_part -= static_cast<uint32_t> (tx_offset);
-
-            int io_res;
-            io_res = ::send ( sock, (char*) src_pos, data_part, 0 );
-
-            if ( io_res > 0 ) {
-                tx_offset += io_res;
-                ret_val = true;
-            }
-
-        }
-    }
-
-    return ret_val;
-}
-
-static bool socket_rx ( os_sock_t sock, hid::types::storage_t& inp_frame, size_t& rx_offset ) {
-
-    bool ret_val = false;
-
-    if ( rx_offset < inp_frame.size () ) {
-        if ( sock != SOCK_INVALID_SOCK ) {
-
-            uint8_t* dst_pos = static_cast<uint8_t*> (inp_frame.data ());
-            dst_pos += rx_offset;
-
-            uint32_t data_part;
-            data_part = static_cast<uint32_t> (inp_frame.size ());
-            data_part -= static_cast<uint32_t> (rx_offset);
-
-            int io_res;
-            io_res = ::recv ( sock, (char*) dst_pos, data_part, 0 );
-
-            if ( io_res > 0 ) {
-                rx_offset += io_res;
-                ret_val = true;
-            }
-
-        }
-    }
-
-    return ret_val;
-}
-
-static bool frame_tx ( os_sock_t sock, const hid::types::storage_t& out_frame ) {
-
-    bool ret_val = false;
-
-    if ( sock != SOCK_INVALID_SOCK ) {
-
-        if ( out_frame.size () == 0 ) {
-            ret_val = true;
+        if ( select_res == 0 ) {
+            sock_state = sock_state_t::SOCK_ERR_TIMEOUT;
         } else {
+            int select_err = sock_error ();
+            if ( (select_err == EINTR) || (select_err == EWOULDBLOCK) ) {
+                sock_state = sock_state_t::SOCK_ERR_TIMEOUT;
+            } else {
+                sock_state = sock_state_t::SOCK_ERR_SELECT;
+            }
+        }
+    }
+}
 
-            bool    io_res = false;
-            size_t  tx_offset = 0;
+static void socket_accept ( 
+    INOUT MANDATORY sock_state_t&       sock_state, 
+    IN    MANDATORY os_sock_t           server_sock, 
+    IN    MANDATORY os_sock_t           client_sock 
+) {
+
+    if ( sock_state == sock_state_t::SOCK_OK ) {
+
+        sock_state = sock_state_t::SOCK_ERR_ACCEPT;
+
+        client_sock = accept ( server_sock, NULL, NULL );
+
+        if( client_sock != SOCK_INVALID_SOCK ) {
+            sock_state = sock_state_t::SOCK_OK;
+        }
+    }
+}
+
+static void socket_connect ( 
+    INOUT MANDATORY sock_state_t&       sock_state, 
+    IN    MANDATORY os_sock_t           sock, 
+    IN    MANDATORY conn_type_t         conn_type, 
+    IN    MANDATORY const std::string   port 
+) {
+
+    if ( sock_state == sock_state_t::SOCK_OK ) {
+
+        struct sockaddr_un addr_file    = {};
+        struct sockaddr_in addr_sock    = {};
+        struct sockaddr*   con_addr_ptr = nullptr;
+        int                con_addr_len = 0;
+
+        if ( conn_type == conn_type_t::CONN_TYPE_FILE ) {
+            addr_file.sun_family = AF_UNIX;
+            strncpy ( addr_file.sun_path, port.c_str(), UNIX_PATH_MAX-1 );
+            con_addr_ptr = (struct sockaddr*) &addr_file;
+            con_addr_len = (int) SUN_LEN ( &addr_file );
+        }
+        if ( conn_type == conn_type_t::CONN_TYPE_SOCK ) {
+            int port_ = atoi (port.c_str());
+            addr_sock.sin_family = AF_INET;
+            addr_sock.sin_port = htons(port_);
+            (void)inet_pton ( AF_INET, "127.0.0.1", &addr_sock.sin_addr );
+            con_addr_ptr = (struct sockaddr*) &addr_sock;
+            con_addr_len = sizeof(addr_sock);
+        }
+
+        sock_state = sock_state_t::SOCK_ERR_CONNECT;
+
+        int io_res = ::connect ( sock, con_addr_ptr, con_addr_len );
+        if ( io_res == 0 ) {
+            sock_state = sock_state_t::SOCK_OK;
+        }
+
+    }
+}
+
+static void frame_wait ( 
+    INOUT MANDATORY sock_state_t&       sock_state, 
+    IN    MANDATORY os_sock_t           sock
+) {
+
+    if ( sock_state == sock_state_t::SOCK_OK ) {
+
+        struct timeval tv;
+        fd_set readfds;
+
+        FD_ZERO ( &readfds );
+        FD_SET ( sock, &readfds );
+
+        tv.tv_sec  = 1;
+        tv.tv_usec = 0;
+
+        int io_res = select ( static_cast<int>(sock + 1), &readfds, NULL, NULL, &tv );
+
+        if ( io_res < 0 ) {
+            sock_state = sock_state_t::SOCK_ERR_SELECT;
+        } else
+        if ( io_res == 0 ) {
+            sock_state = sock_state_t::SOCK_ERR_TIMEOUT;
+        }
+    }
+}
+
+static void frame_tx ( 
+    INOUT MANDATORY sock_state_t&       sock_state, 
+    IN    MANDATORY os_sock_t           sock, 
+    IN    MANDATORY const hid::types::storage_t& out_frame 
+) {
+
+    if ( sock_state == sock_state_t::SOCK_OK ) {
+
+        if ( out_frame.size () > 0 ) {
+
+            const uint8_t* tx_pos = nullptr;
+            int     tx_part = 0;
+            size_t  tx_cnt  = 0;
+
+            sock_blocking (sock);
+
+            tx_cnt = 0;
 
             for ( ; ; ) {
-                io_res = socket_tx ( sock, out_frame, tx_offset );
-                if ( ! io_res ) {
+
+                if ( tx_cnt == out_frame.size () ) {
                     break;
                 }
-                if ( tx_offset == out_frame.size () ) {
-                    ret_val = true;
+
+                tx_pos  = static_cast<const uint8_t*> (out_frame.data ()+tx_cnt);
+                tx_part = static_cast<int> (out_frame.size()-tx_cnt);
+
+                // std::this_thread::sleep_for( std::chrono::milliseconds(1) );
+                // tx_part = 1;
+
+                int io_res = ::send ( sock, (char*)tx_pos, tx_part, 0 );
+
+                if ( io_res < 0 ) {
+                    sock_state = sock_state_t::SOCK_ERR_TX;
                     break;
                 }
+
+                if ( io_res == 0 ) {
+                    sock_state = sock_state_t::SOCK_ERR_CLOSED;
+                    break;
+                }
+
+                tx_cnt += io_res;
             }
+
         }
 
     }
-
-    return ret_val;
 }
 
-static bool frame_rx ( os_sock_t sock, hid::types::storage_t& inp_frame ) {
+static void frame_rx ( 
+    INOUT MANDATORY sock_state_t&       sock_state, 
+    IN    MANDATORY os_sock_t           sock, 
+    IN    MANDATORY sock_duration_ms_t  delay, 
+    OUT   MANDATORY hid::types::storage_t& inp_frame 
+) {
 
-    bool ret_val = false;
+    if ( sock_state == sock_state_t::SOCK_OK ) {
 
-    if ( sock != SOCK_INVALID_SOCK ) {
+        if ( inp_frame.size () > 0 ) {
 
-        if ( inp_frame.size () == 0 ) {
-            ret_val = true;
-        } else {
+            sock_checkpoint_t end_time = sock_time_src_t::now() + delay;
 
-            bool    io_res = false;
-            size_t  rx_offset = 0;
+            char* rx_pos    = nullptr;
+            int   rx_part   = 0;
+            int   rx_cnt    = 0;
 
-            for( ; ; ) {
-                io_res = socket_rx ( sock, inp_frame, rx_offset );
-                if ( ! io_res ) {
+            sock_nonblocking (sock);
+
+            rx_cnt = 0;
+            for ( ; ; ) {
+
+                if ( rx_cnt == inp_frame.size () ) {
                     break;
                 }
-                if ( rx_offset == inp_frame.size () ) {
-                    ret_val = true;
+
+                rx_pos  = reinterpret_cast<char*> ( inp_frame.data () + rx_cnt );
+                rx_part = static_cast<int>        ( inp_frame.size () - rx_cnt );
+
+                int io_res = ::recv ( sock, rx_pos, rx_part, 0);
+
+                if ( io_res > 0 ) {
+                    rx_cnt += io_res;
+                    continue;
+                } 
+
+                if ( io_res == 0 ) {
+                    // TTRACE ( "Connection closed by remote side." );
+                    sock_state = sock_state_t::SOCK_ERR_CLOSED;
                     break;
                 }
+
+                io_res = sock_error();
+                if ( io_res == EAGAIN ) {
+                    continue;
+                }
+
+                if ( io_res != EWOULDBLOCK ) {
+                    // TTRACE ( "Read error." );
+                    sock_state = sock_state_t::SOCK_ERR_RX;
+                    break;
+                }
+
+                struct timeval tv;
+                fd_set readfds;
+
+                if ( ! get_timeval ( end_time, tv ) ) {
+                    // TTRACE ( "Timeout" );
+                    sock_state = sock_state_t::SOCK_ERR_TIMEOUT;
+                    break;
+                }
+
+                FD_ZERO(&readfds);
+                FD_SET(sock, &readfds);
+
+                io_res = select(static_cast<int>(sock+1), &readfds, NULL, NULL, &tv);
+
+                if ( io_res < 0 ) {
+                    break;
+                } else
+                if ( io_res == 0 ) {
+                    // break;
+                } 
+
+                // data arrived.
             }
+
+            sock_blocking (sock);
         }
 
     }
+}
 
-    return ret_val;
+static void frame_rx ( 
+    INOUT MANDATORY sock_state_t&       sock_state, 
+    IN    MANDATORY os_sock_t           sock, 
+    IN    MANDATORY sock_checkpoint_t   exptiration_time, 
+    OUT   MANDATORY hid::types::storage_t& inp_frame 
+) {
+
+    if ( sock_state == sock_state_t::SOCK_OK ) {
+
+        sock_checkpoint_t curr_time = sock_time_src_t::now ();
+
+        if ( curr_time >= exptiration_time ) {
+            sock_state = sock_state_t::SOCK_ERR_TIMEOUT;
+        } else {
+            sock_duration_ms_t ms = std::chrono::duration_cast<std::chrono::milliseconds>(exptiration_time - curr_time);
+            frame_rx ( sock_state, sock, ms, inp_frame );
+        }
+    }
 }
 
 //---------------------------------------------------------------------------//
 
 sock_transaction_t::sock_transaction_t () {
+    inp_cmd = 0;
+}
 
-    m_closed = false;
-    m_idx    = TRANSACTION_INVALID_IDX;
+void sock_transaction_t::start ( sock_duration_ms_t expiration_ms ) {
+
+    tv_start = sock_time_src_t::now ();
+    tv_expiration = tv_start + expiration_ms;
 }
 
 void sock_transaction_t::checkpoint_set ( sock_checkpoint_type_t point_type ) {
 
-    hid::socket::sock_checkpoint_t ref = sock_time_src_t::now();
+    sock_checkpoint_t ref = sock_time_src_t::now();
 
     switch ( point_type ) {
         case sock_checkpoint_type_t::CHECKPOINT_START:
-            m_start_time = ref;
+            tv_start = ref;
             break;
         case sock_checkpoint_type_t::CHECKPOINT_RX_HDR:
-            m_rcv_hdr = ref;
+            tv_rcv_hdr = ref;
             break;
         case sock_checkpoint_type_t::CHECKPOINT_RX_PAYLOAD:
-            m_rcv_payload = ref;
+            tv_rcv_pay = ref;
+            break;
+        case sock_checkpoint_type_t::CHECKPOINT_EXEC:
+            tv_exec = ref;
             break;
         case sock_checkpoint_type_t::CHECKPOINT_TX_HDR:
-            m_snt_hdr = ref;
+            tv_snt_hdr = ref;
             break;
         case sock_checkpoint_type_t::CHECKPOINT_TX_PAYLOAD:
-            m_snt_payload = ref;
-            break;
-        case sock_checkpoint_type_t::CHECKPOINT_COMMIT:
-            m_commit_time = ref;
+            tv_snt_pay = ref;
             break;
         case sock_checkpoint_type_t::CHECKPOINT_UNKNOWN:
         default:
@@ -343,31 +516,30 @@ void sock_transaction_t::checkpoint_set ( sock_checkpoint_type_t point_type ) {
     }
 }
 
-bool sock_transaction_t::is_expired () {
+void sock_transaction_t::reset ( void ) {
 
-    bool ret_val = false;
+    sock_checkpoint_t zero_val = {};
 
-    sock_checkpoint_t ref = sock_time_src_t::now();
+    inp_hdr.clear ();
+    inp_pay.clear ();
+    out_hdr.clear ();
+    out_pay.clear ();
 
-    if ( m_expiration_time < ref ) {
-        ret_val = true;
-    }
+    inp_cmd       = 0;
 
-    return ret_val;
-}
-
-void sock_transaction_t::close () {
-
-    if ( ! m_closed ) {
-        m_closed = true;
-        m_commit_time = sock_time_src_t::now();
-    }
+    tv_start      = zero_val;
+    tv_rcv_hdr    = zero_val;
+    tv_rcv_pay    = zero_val;
+    tv_exec       = zero_val;
+    tv_snt_hdr    = zero_val;
+    tv_snt_pay    = zero_val;
+    tv_expiration = zero_val;
 }
 
 //---------------------------------------------------------------------------//
 
 SocketServer::SocketServer () {
-    os_sock_init ();
+    sock_init ();
     m_stop = false;
     m_ev_handler = dummy_ev_handler;
 }
@@ -377,106 +549,79 @@ SocketServer::~SocketServer () {
     Stop ();
 }
 
-bool SocketServer::ConnProcessNew ( os_sock_t server_socket ) {
+void SocketServer::StartClient ( sock_state_t& conn_res, os_sock_t client_sock ) {
 
-    bool    ret_val = false;
-    bool    is_timeout;
-    bool    io_res;
-
-    io_res = socket_select (server_socket, is_timeout);
-    if ( ! io_res ) {
-        // Unexpected result.
-        ret_val = false;
-    } else
-    if ( is_timeout ) {
-        ret_val = true;
-    } else {
-        os_sock_t client_sock;
-        io_res = socket_accept ( server_socket, client_sock );
-        if ( ! io_res ) {
-            ret_val = false;
-        } else {
-            sock_thread_t client_handler;
-            client_handler = std::async ( std::launch::async, &SocketServer::Shell, this, client_sock );
-            m_clients.emplace_back ( std::move ( client_handler ) );
-            ret_val = true;
-        }
+    if ( conn_res == sock_state_t::SOCK_OK ) {
+        // TTRACE ( "New connection established." );
+        sock_thread_t client_handler;
+        client_handler = std::async ( std::launch::async, &SocketServer::Shell, this, client_sock );
+        m_clients.emplace_back ( std::move ( client_handler ) );
     }
-
-    return ret_val;
 }
 
 void SocketServer::Service () {
 
     os_sock_t server_socket = (os_sock_t) SOCK_INVALID_SOCK;
 
-    bool listen_required = true;
-    int  err_cnt_start  = 0;
-    int  err_cnt_socket = 0;
+    int err_cnt_start = 0;
 
-    bool io_res;
+    for ( ; ; ) {
 
-
-    while ( ! m_stop ) {
+        if ( m_stop ) {
+            // TTRACE ( "Stop event received." );
+            break;
+        }
 
         if ( err_cnt_start > SOCK_MAX_ERRORS_CNT ) {
             break;
         }
 
-        if ( err_cnt_socket > SOCK_MAX_ERRORS_CNT ) {
-            break;
-        }
-
-        listen_required = false;
-
         if ( server_socket == SOCK_INVALID_SOCK ) {
-            listen_required = true;
-            socket_open ( m_conn_type, server_socket );
-            io_res = socket_bind ( server_socket, m_conn_type, m_port.c_str() );
-            if ( ! io_res ) {
-                socket_close( server_socket );
-            }
 
-        }
+            sock_state_t init_res = sock_state_t::SOCK_OK;
+            socket_open   ( init_res, m_conn_type, server_socket );
+            socket_bind   ( init_res, server_socket, m_conn_type, m_port.c_str() );
+            socket_listen ( init_res, server_socket );
 
-        if ( server_socket == SOCK_INVALID_SOCK ) {
-            err_cnt_start++;
-            std::this_thread::sleep_for ( std::chrono::milliseconds ( 1000 ) );
-            continue;
-        }
-
-        if ( listen_required ) {
-            int listen_res;
-            listen_res = ::listen ( server_socket, SOMAXCONN );
-            if ( listen_res != 0 ) {
-                os_sockclose ( server_socket );
-                server_socket = SOCK_INVALID_SOCK;
+            if ( init_res != sock_state_t::SOCK_OK ) {
+                // TTRACE ( "Failed to open server socket." );
+                err_cnt_start++;
+                os_sockclose (server_socket);
+                std::this_thread::sleep_for ( 1s );
                 continue;
             }
+
         }
 
         err_cnt_start = 0;
 
-        io_res = ConnProcessNew ( server_socket );
-        if ( ! io_res ) {
-            err_cnt_socket++;
-            os_sockclose ( server_socket );
-            server_socket = SOCK_INVALID_SOCK;
-            continue;
-        }
+        {   // Accept new connection(s)
+            os_sock_t client_sock = SOCK_INVALID_SOCK;
+            sock_state_t conn_res = sock_state_t::SOCK_OK;
+            socket_wait   ( conn_res, server_socket, std::chrono::seconds(1) );
+            socket_accept ( conn_res, server_socket, client_sock );
+            StartClient   ( conn_res, client_sock );
 
-        err_cnt_socket = 0;
+            if ( conn_res == sock_state_t::SOCK_OK ) {
+                // TRACE ( "New client: Accepted." );
+                continue;
+            } else
+            if ( conn_res != sock_state_t::SOCK_ERR_TIMEOUT ) {
+                // TTRACE ( "Failed to handle connections." );
+                break;
+            }
+
+        }
 
     }
 
     os_sockclose ( server_socket );
 
     if ( m_conn_type == conn_type_t::CONN_TYPE_FILE ) {
-        os_sock_unlink ( m_port.c_str() );
+        sock_unlink ( m_port.c_str() );
     }
 
     m_instance_cnt--;
-    return;
 }
 
 void SocketServer::SetHandler ( ev_handler_t handler ) {
@@ -529,82 +674,192 @@ void SocketServer::Stop ( void ) {
     m_clients.clear ();
 }
 
+void SocketServer::ShellCmdStart ( os_sock_t socket, sock_state_t& state, sock_transaction_t& tr ) {
+
+    UNUSED (socket);
+    UNUSED (state);
+
+    try {
+        tr.start ( SOCK_COMM_TIMEOUT );
+        tr.inp_hdr.resize ( hid::stream::StreamPrefix::size() );
+    } catch ( ... ) {
+        // TTRACE ( "Exception" );
+        state = sock_state_t::SOCK_ERR_GENERAL;
+    }
+}
+
+void SocketServer::ShellReadPrefix ( os_sock_t socket, sock_state_t& state, sock_transaction_t& tr ) {
+    if ( state == sock_state_t::SOCK_OK ) {
+        try {
+
+            frame_rx ( state, socket, tr.tv_expiration, tr.inp_hdr );
+            if ( state == sock_state_t::SOCK_OK ) {
+                if ( hid::stream::StreamPrefix::Valid(tr.inp_hdr) ) {
+                    hid::stream::stream_params_t params;
+                    hid::stream::StreamPrefix::GetParams ( tr.inp_hdr, params );
+                    tr.inp_pay.resize ( params.len );
+                    tr.inp_cmd = static_cast<int> (params.command);
+                    tr.checkpoint_set ( sock_checkpoint_type_t::CHECKPOINT_RX_HDR );
+                } else {
+                    // TRACE ( "Wrong frame received." );
+                    state = sock_state_t::SOCK_ERR_SYNC;
+                }
+            }
+
+        } catch ( ... ) {
+            // TTRACE ( "Exception" );
+            state = sock_state_t::SOCK_ERR_GENERAL;
+        }
+    }
+}
+
+void SocketServer::ShellReadPayload ( os_sock_t socket, sock_state_t& state, sock_transaction_t& tr ) {
+    if ( state == sock_state_t::SOCK_OK ) {
+        try {
+            frame_rx ( state, socket, tr.tv_expiration, tr.inp_pay );
+            tr.checkpoint_set ( sock_checkpoint_type_t::CHECKPOINT_RX_PAYLOAD );
+        } catch ( ... ) {
+            // TTRACE ( "Exception" );
+            state = sock_state_t::SOCK_ERR_GENERAL;
+        }
+    }
+}
+
+void SocketServer::ShellCmdExec ( os_sock_t socket, sock_state_t& state, sock_transaction_t& tr ) {
+
+    if ( state == sock_state_t::SOCK_OK ) {
+        
+        try {
+
+            hid::stream::StreamCmd out_cmd = hid::stream::StreamCmd::STREAM_CMD_ERROR;
+            uint32_t out_code = static_cast<uint32_t> (hid::stream::StreamCmd::STREAM_CMD_ERROR);
+
+            {   // Exec command
+                hid::stream::StreamCmd inp_cmd = static_cast<hid::stream::StreamCmd> (tr.inp_cmd);
+
+                tr.out_pay.clear();
+
+                if ( inp_cmd == hid::stream::StreamCmd::STREAM_CMD_PING_REQUEST ) {
+                    out_cmd  = hid::stream::StreamCmd::STREAM_CMD_PING_RESPONSE;
+                    out_code = 0;
+                } else 
+                if ( inp_cmd == hid::stream::StreamCmd::STREAM_CMD_REQUEST ) {
+                    out_cmd  = hid::stream::StreamCmd::STREAM_CMD_RESPONSE;
+                    (m_ev_handler) ( tr.inp_pay, tr.out_pay, out_code );
+                }
+            }
+
+            tr.checkpoint_set ( sock_checkpoint_type_t::CHECKPOINT_EXEC );
+
+            {   // Format response.
+                hid::stream::stream_params_t params;
+                params.command = out_cmd;
+                params.code    = out_code;
+                params.len     = static_cast<uint32_t> (tr.out_pay.size() );
+
+                hid::stream::StreamPrefix::SetParams ( params, tr.out_hdr );
+
+            }
+
+        } catch( ... ) {
+            state = sock_state_t::SOCK_ERR_EXEC;
+        }
+
+
+    }
+}
+
+void SocketServer::ShellSendPrefix ( os_sock_t socket, sock_state_t& state, sock_transaction_t& tr ) {
+    if ( state == sock_state_t::SOCK_OK ) {
+        frame_tx ( state, socket, tr.out_hdr );
+        tr.checkpoint_set ( sock_checkpoint_type_t::CHECKPOINT_TX_HDR );
+
+    }
+}
+
+void SocketServer::ShellSendPayload ( os_sock_t socket, sock_state_t& state, sock_transaction_t& tr ) {
+    if ( state == sock_state_t::SOCK_OK ) {
+        frame_tx ( state, socket, tr.out_pay );
+        tr.checkpoint_set ( sock_checkpoint_type_t::CHECKPOINT_TX_PAYLOAD );
+    }
+}
+
+void SocketServer::LogTransaction ( const sock_transaction_t& tr, const sock_state_t conn_state ) {
+
+    std::string log_msg;
+
+    log_msg += tp_to_string  ( "Start:   ", tr.tv_start );
+    log_msg += dur_to_string ( "rcv HDR: ", tr.tv_start, tr.tv_rcv_hdr );
+    log_msg += dur_to_string ( "rcv PAY: ", tr.tv_start, tr.tv_rcv_pay );
+    log_msg += dur_to_string ( "Exec:    ", tr.tv_start, tr.tv_exec );
+    log_msg += dur_to_string ( "snt HDR: ", tr.tv_start, tr.tv_snt_hdr );
+    log_msg += dur_to_string ( "snt PAY: ", tr.tv_start, tr.tv_snt_pay );
+    log_msg += dur_to_string ( "Exp:     ", tr.tv_start, tr.tv_expiration );
+    log_msg += "Status:  ";
+    log_msg += std::to_string ( static_cast<uint32_t>(conn_state) );
+    log_msg += "\r\n";
+    log_msg += "\r\n";
+
+    std::cout << log_msg;
+}
+
+void SocketServer::ShellClose ( os_sock_t socket, const sock_state_t& state ) {
+
+    if ( socket != SOCK_INVALID_SOCK ) {
+
+        hid::stream::stream_params_t params;
+        hid::types::storage_t        out_frame;
+
+        params.command = hid::stream::StreamCmd::STREAM_CMD_ERROR;
+        params.code    = static_cast<uint32_t> (state);
+        params.len     = 0;
+
+        hid::stream::StreamPrefix::SetParams ( params, out_frame );
+
+        sock_state_t resp = sock_state_t::SOCK_OK;
+        
+        frame_tx ( resp, socket, out_frame );
+    }
+}
+
 bool SocketServer::Shell ( os_sock_t socket ) {
 
-    hid::stream::StreamPrefix     prefix;
-    hid::stream::stream_params_t  inp_params = {};
-    hid::types::storage_t         inp_hdr;
-    hid::types::storage_t         inp_pay;
+    sock_transaction_t tr;
 
-    hid::stream::stream_params_t  out_params = {};
-    hid::types::storage_t         out_hdr;
-    hid::types::storage_t         out_pay;
+    for ( ; ; ) {
 
-    int  out_err_code;
-    bool io_res;
-
-    while ( ! m_stop ) {
-
-        inp_hdr.resize ( prefix.size() );
-
-        io_res = frame_rx ( socket, inp_hdr );
-        if ( ! io_res ) {
-           break;
-        }
-        printf ("inp_hdr \r\n");
-
-        io_res = prefix.Valid ( inp_hdr );
-        if ( ! io_res ) {
-           break;
-        }
-
-        prefix.GetParams ( inp_hdr, inp_params );
-
-        inp_pay.resize ( inp_params.len );
-        io_res = frame_rx ( socket, inp_pay );
-        if ( ! io_res ) {
+        if ( m_stop ) {
             break;
         }
 
-        printf ( "inp_pay \r\n" );
+        sock_state_t conn_state = sock_state_t::SOCK_OK;
 
-        if ( inp_params.command == hid::stream::StreamCmd::STREAM_CMD_PING_REQUEST ) {
-            out_params.command = hid::stream::StreamCmd::STREAM_CMD_PING_RESPONSE;
-            out_params.code = 0;
-            out_pay.resize (0);
-        } else 
-        if ( inp_params.command == hid::stream::StreamCmd::STREAM_CMD_REQUEST ) {
-            (m_ev_handler) ( inp_pay, out_pay, out_err_code );
-            out_params.command = hid::stream::StreamCmd::STREAM_CMD_RESPONSE;
-            out_params.code = out_err_code;
-        } else {
-            out_params.command = hid::stream::StreamCmd::STREAM_CMD_ERROR;
-            out_params.code = 0;
-            out_pay.resize ( 0 );
+        frame_wait ( conn_state, socket );
+        if ( conn_state == sock_state_t::SOCK_ERR_TIMEOUT ) {
+            continue;
         }
-
-        out_params.len = static_cast<uint32_t> ( out_pay.size () );
-
-        prefix.SetParams ( out_params, out_hdr );
-
-        io_res = frame_tx ( socket, out_hdr );
-        if ( ! io_res ) {
+        if ( conn_state != sock_state_t::SOCK_OK ) {
             break;
         }
 
-        printf ( "out_hdr \r\n" );
+        ShellCmdStart    ( socket, conn_state, tr );
+        ShellReadPrefix  ( socket, conn_state, tr );
+        ShellReadPayload ( socket, conn_state, tr );
+        ShellCmdExec     ( socket, conn_state, tr );
+        ShellSendPrefix  ( socket, conn_state, tr );
+        ShellSendPayload ( socket, conn_state, tr );
+        LogTransaction   ( tr, conn_state );
 
-        io_res = frame_tx ( socket, out_pay );
-        if ( ! io_res ) {
+        tr.reset();
+
+        if ( conn_state != sock_state_t::SOCK_OK ) {
+            ShellClose (socket, conn_state);
             break;
         }
 
-        printf ( "out_pay \r\n" );
-
-        printf ( "! close \r\n" );
     }
 
-    socket_close ( socket );
+    os_sockclose ( socket );
     return true;
 
 }
@@ -648,7 +903,7 @@ bool SocketServer::ConnProcessExpired () {
 
 SocketClient::SocketClient () {
 
-    os_sock_init ();
+    sock_init ();
     m_conn_type = conn_type_t::CONN_TYPE_UNKNOW;
     m_sock = (os_sock_t) SOCK_INVALID_SOCK;
 }
@@ -664,89 +919,160 @@ SocketClient::~SocketClient () {
 
 bool SocketClient::Connect ( const char* const portStr, conn_type_t type ) {
 
-    // Do not connect immediatelly. 
-    // Just keep parameters where (and how) to connect.
-    // Connection will be established in the transaction.
-    m_port = portStr;
+    sock_state_t state = sock_state_t::SOCK_OK;
+
+    m_port      = portStr;
     m_conn_type = type;
 
-    return true;
+    connect ( state );
+
+    return ( state == sock_state_t::SOCK_OK );
 }
 
 void SocketClient::Close () {
 
-    socket_close( m_sock );
+    os_sockclose( m_sock );
+}
+
+void SocketClient::connect( sock_state_t& state ) {
+
+    os_sockclose   ( m_sock );
+    socket_open    ( state, m_conn_type, m_sock );
+    socket_connect ( state, m_sock, m_conn_type, m_port );
+}
+
+void SocketClient::SendPrefix (sock_state_t& state, sock_transaction_t& tr, const hid::types::storage_t& out_fame ) {
+
+    if ( state == sock_state_t::SOCK_OK ) {
+        try {
+
+            hid::stream::stream_params_t  params = {};
+
+            params.command  =  hid::stream::StreamCmd::STREAM_CMD_REQUEST;
+            params.len      =  static_cast<uint32_t> ( out_fame.size() );
+
+            hid::stream::StreamPrefix::SetParams ( params, tr.out_hdr );
+
+            frame_tx ( state, m_sock, tr.out_hdr );
+
+            if ( state == sock_state_t::SOCK_OK ) {
+                tr.checkpoint_set (sock_checkpoint_type_t::CHECKPOINT_TX_HDR);
+            }
+
+        }   catch( ... ) {
+            state = sock_state_t::SOCK_ERR_GENERAL;
+        }
+    }
+}
+
+void SocketClient::SendPayload ( sock_state_t& state, sock_transaction_t& tr, const hid::types::storage_t& out_fame ) {
+
+    if ( state == sock_state_t::SOCK_OK ) {
+        try {
+            frame_tx ( state, m_sock, out_fame );
+            if ( state == sock_state_t::SOCK_OK ) {
+                tr.checkpoint_set (sock_checkpoint_type_t::CHECKPOINT_TX_PAYLOAD);
+            }
+        }   catch( ... ) {
+            state = sock_state_t::SOCK_ERR_GENERAL;
+        }
+    }
+}
+
+void SocketClient::RecvHeader ( sock_state_t& state, sock_transaction_t& tr ) {
+
+    if ( state == sock_state_t::SOCK_OK ) {
+        try {
+
+            tr.inp_hdr.resize ( hid::stream::StreamPrefix::size() ); 
+            frame_rx ( state, m_sock, tr.tv_expiration, tr.inp_hdr );
+            if ( state == sock_state_t::SOCK_OK ) {
+                if ( hid::stream::StreamPrefix::Valid(tr.inp_hdr) ) {
+                    hid::stream::stream_params_t params;
+                    hid::stream::StreamPrefix::GetParams ( tr.inp_hdr, params );
+                    tr.inp_pay.resize ( params.len );
+                    tr.inp_cmd = static_cast<int> (params.command);
+                    tr.checkpoint_set ( sock_checkpoint_type_t::CHECKPOINT_RX_HDR );
+                } else {
+                    // TRACE ( "Wrong frame received." );
+                    state = sock_state_t::SOCK_ERR_SYNC;
+                }
+            }
+
+        } catch ( ... ) {
+            // TTRACE ( "Exception" );
+            state = sock_state_t::SOCK_ERR_GENERAL;
+        }
+    }
+}
+
+void SocketClient::RecvPayload ( sock_state_t& state, sock_transaction_t& tr, hid::types::storage_t& in_frame ) {
+
+    if ( state == sock_state_t::SOCK_OK ) {
+        try {
+            frame_rx ( state, m_sock, tr.tv_expiration, in_frame );
+            if ( state == sock_state_t::SOCK_OK ) {
+                tr.checkpoint_set ( sock_checkpoint_type_t::CHECKPOINT_RX_PAYLOAD );
+            }
+        }   catch( ... ) {
+            state = sock_state_t::SOCK_ERR_GENERAL;
+        }
+    }
+}
+
+void SocketClient::LogTransaction ( const sock_transaction_t& tr, const sock_state_t conn_state ) {
+
+    std::string log_msg;
+
+    log_msg += tp_to_string  ( "Start:   ", tr.tv_start );
+    log_msg += dur_to_string ( "snt HDR: ", tr.tv_start, tr.tv_snt_hdr );
+    log_msg += dur_to_string ( "snt PAY: ", tr.tv_start, tr.tv_snt_pay );
+    log_msg += dur_to_string ( "rcv HDR: ", tr.tv_start, tr.tv_rcv_hdr );
+    log_msg += dur_to_string ( "rcv PAY: ", tr.tv_start, tr.tv_rcv_pay );
+    log_msg += dur_to_string ( "Exp:     ", tr.tv_start, tr.tv_expiration );
+    log_msg += "Status:  ";
+    log_msg += std::to_string ( static_cast<uint32_t>(conn_state) );
+    log_msg += "\r\n";
+    log_msg += "\r\n";
+
+    std::cout << log_msg;
 }
 
 bool SocketClient::Transaction ( std::chrono::milliseconds delayMs, const hid::types::storage_t& out_fame, hid::types::storage_t& in_frame ) {
 
-    bool ret_val = true;
-    bool io_res  = false;
+    sock_state_t state = sock_state_t::SOCK_OK;
 
     try {
-        hid::types::storage_t         out_hdr;
-        hid::types::storage_t         inp_hdr;
-        hid::stream::StreamPrefix     prefix;
-        hid::stream::stream_params_t  params = {};
 
-        params.command = hid::stream::StreamCmd::STREAM_CMD_REQUEST;
-        params.len = static_cast<uint32_t> (out_fame.size ());
-        prefix.SetParams ( params, out_hdr );
+        sock_transaction_t tr;
 
-        io_res = frame_tx ( m_sock, out_hdr );
-        if ( ! io_res ) {
-            // TTRACE ("Attempt to (re)Connect to server.");
-            socket_close ( m_sock );
-            socket_open ( m_conn_type, m_sock );
-            socket_connect ( m_sock, m_conn_type, m_port );
-            io_res = frame_tx ( m_sock, out_hdr );
+        tr.start ( SOCK_COMM_TIMEOUT );
+
+        SendPrefix (state, tr, out_fame );
+
+        if ( state != sock_state_t::SOCK_OK ) {
+            state = sock_state_t::SOCK_OK;
+            connect    ( state );
+            SendPrefix ( state, tr, out_fame );
         }
 
-        if ( ! io_res ) {
-            // TTRACE ("Transaction failed. Can't send prefix");
-            goto EXIT;
-        }
+        SendPayload ( state, tr, out_fame );
+        RecvHeader  ( state, tr);
+        RecvPayload ( state, tr, in_frame);
 
-        io_res = frame_tx ( m_sock, out_fame );
-        if ( ! io_res ) {
-            // TTRACE ("Transaction failed. Can't send payload");
-            goto EXIT;
-        }
-
-        inp_hdr.resize ( prefix.size() );
-        io_res = frame_rx ( m_sock, inp_hdr );
-        if ( ! io_res ) {
-            // TTRACE ("Transaction failed. Can't read prefix");
-            goto EXIT;
-        }
-
-        io_res = prefix.Valid ( inp_hdr );
-        if ( ! io_res ) {
-            // TTRACE ("Transaction failed. Wrong prefix received.");
-            goto EXIT;
-        }
-
-        prefix.GetParams ( inp_hdr, params );
-        in_frame.resize ( params.len );
-
-        io_res = frame_rx ( m_sock, in_frame );
-        if ( ! io_res ) {
-            // TTRACE ("Transaction failed. Can't receive payload.");
-            goto EXIT;
-        }
-
-        ret_val = true;
+        LogTransaction (tr, state);
 
     }   catch( ... ) {
         // TTRACE ("Transaction failed. Internal error.");
+        state = sock_state_t::SOCK_ERR_GENERAL;
     }
 
-EXIT:
-    if ( ! ret_val ) {
+    if ( state != sock_state_t::SOCK_OK ) {
         // TTRACE ("Transaction failed. Close socked.");
-        socket_close ( m_sock );
+        os_sockclose ( m_sock );
     }
-    return ret_val;
+
+    return  ( state == sock_state_t::SOCK_OK );
 }
 
 }

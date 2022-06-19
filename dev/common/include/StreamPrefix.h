@@ -33,13 +33,12 @@ namespace stream {
 
         using time_source_t      = std::chrono::steady_clock;
         using time_point_t       = std::chrono::time_point<time_source_t>;
-
         using time_duration_ns_t = std::chrono::nanoseconds;
         using time_duration_ms_t = std::chrono::milliseconds;
 
         public:
 
-            bool SetParams (const stream_params_t& params, ::hid::types::storage_t& storage) const {
+            static bool SetParams (const stream_params_t& params, hid::types::storage_t& storage) {
 
                 bool ret_val = false;
 
@@ -69,7 +68,7 @@ namespace stream {
                 return ret_val;
             }
 
-            bool SetTimeout ( uint32_t timeout_ms, ::hid::types::storage_t& storage ) const {
+            static bool SetTimeout ( uint32_t timeout_ms, hid::types::storage_t& storage )  {
 
                 bool ret_val = false;
 
@@ -97,7 +96,7 @@ namespace stream {
                 return ret_val;
             }
 
-            bool GetParams ( const ::hid::types::storage_t& storage, stream_params_t& params ) const {
+            static bool GetParams ( const hid::types::storage_t& storage, stream_params_t& params )  {
 
                 bool ret_val = false;
 
@@ -119,7 +118,7 @@ namespace stream {
                 return ret_val;
             }
 
-            bool ExpirationTimeValid ( const ::hid::types::storage_t& storage, bool& is_valid ) const  {
+            static bool ExpirationTimeValid ( const hid::types::storage_t& storage, bool& is_valid )   {
 
                 bool ret_val = false;
 
@@ -139,7 +138,7 @@ namespace stream {
                 return ret_val;
             }
 
-            bool ExpirationTimeGet ( const ::hid::types::storage_t& storage, bool& is_expired, struct timeval& tv ) const {
+            static bool ExpirationTimeGet ( const hid::types::storage_t& storage, bool& is_expired, struct timeval& tv )  {
 
                 bool ret_val = false;
 
@@ -187,7 +186,7 @@ namespace stream {
 
             }
 
-            bool Valid ( const ::hid::types::storage_t& storage ) const {
+            static bool Valid ( const hid::types::storage_t& storage )  {
                 
                 bool ret_val = false;
 
@@ -209,7 +208,7 @@ namespace stream {
                 return ret_val;                
             }
 
-            constexpr size_t size() const {
+            static size_t size () {
                 // +  0 uint32_t     magic
                 // +  4 uint32_t     command
                 // +  8 uint32_t     code
@@ -222,7 +221,7 @@ namespace stream {
 
         private:
 
-            constexpr int TsOffset() const {
+            static constexpr int TsOffset()  {
                 return 12;
             }
     };
