@@ -1,11 +1,11 @@
 #include <HidOsTypes.h>
 
 #ifndef PLATFORM
-#error "PLATFORM is not defined"
+    #error "PLATFORM is not defined"
 #endif
 
-#if (  (PLATFORM!=PLATFORM_WINDOWS)  &&  (PLATFORM!=PLATFORM_UNIX) )
-#error "PLATFORM is not supported"
+#if (  (PLATFORM!=PLATFORM_WINDOWS)  &&  (PLATFORM!=PLATFORM_LINUX) )
+    #error "PLATFORM is not supported"
 #endif
 
 #if ( PLATFORM == PLATFORM_WINDOWS )
@@ -14,11 +14,25 @@
     #include <io.h>
     #pragma comment( lib, "ws2_32.lib" )
 
-#elif (PLATFORM == PLATFORM_UNIX)
+#elif (PLATFORM == PLATFORM_LINUX)
 
     #include <fcntl.h>
+    #include <unistd.h>
 
 #endif
+
+#include <cerrno>
+
+bool sock_valid ( os_sock_t& sock ) {
+
+    bool ret_val = true;
+
+    if ( sock == (os_sock_t) (SOCK_INVALID_SOCK) ) {
+        ret_val = false;
+    }
+
+    return ret_val;
+}
 
 int sock_error () {
 
@@ -30,8 +44,8 @@ int sock_error () {
         }
         return err;
 
-    #elif (PLATFORM == PLATFORM_UNIX)
-        return errno();
+    #elif (PLATFORM == PLATFORM_LINUX)
+        return errno;
     #endif
 }
 
@@ -46,7 +60,7 @@ void sock_blocking ( os_sock_t fd ) {
     #if ( PLATFORM == PLATFORM_WINDOWS )
         unsigned long mode = 0;
         ioctlsocket ( fd, FIONBIO, &mode );
-    #elif (PLATFORM == PLATFORM_UNIX)
+    #elif (PLATFORM == PLATFORM_LINUX)
         int flags = fcntl(fd, F_GETFL, 0);
         flags &= ~O_NONBLOCK;
         fcntl ( fd, F_SETFL, flags );
@@ -57,7 +71,7 @@ void sock_nonblocking ( os_sock_t fd ) {
     #if ( PLATFORM == PLATFORM_WINDOWS )
         unsigned long mode = 1;
         ioctlsocket ( fd, FIONBIO, &mode );
-    #elif (PLATFORM == PLATFORM_UNIX)
+    #elif (PLATFORM == PLATFORM_LINUX)
         int flags = fcntl(fd, F_GETFL, 0);
         flags |= O_NONBLOCK;
         fcntl ( fd, F_SETFL, flags );
@@ -67,21 +81,21 @@ void sock_nonblocking ( os_sock_t fd ) {
 void sock_unlink ( const char* const fname ) {
     #if ( PLATFORM == PLATFORM_WINDOWS )
         _unlink ( fname );
-    #elif (PLATFORM == PLATFORM_UNIX)
+    #elif (PLATFORM == PLATFORM_LINUX)
         unlink ( fname );
     #endif
 }
 
 void os_sockclose ( os_sock_t& sock ) {
 
-    if ( sock != SOCK_INVALID_SOCK ) {
+    if ( sock_valid (sock) ) {
 
         #if ( PLATFORM == PLATFORM_WINDOWS )
             closesocket ( sock );
-        #elif (PLATFORM == PLATFORM_UNIX)
+        #elif (PLATFORM == PLATFORM_LINUX)
             close ( sock );
         #endif
 
-        sock = SOCK_INVALID_SOCK;
+        sock = (os_sock_t) (SOCK_INVALID_SOCK);
     }
 }

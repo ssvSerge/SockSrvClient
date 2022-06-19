@@ -10,8 +10,6 @@
 
 using namespace std::chrono_literals;
 
-#define  SUN_LEN(p)  ((size_t) (( (struct sockaddr_un*) NULL)->sun_path) + strlen ((p)->sun_path))
-
 
 namespace hid {
 namespace socket {
@@ -27,6 +25,7 @@ static void dummy_ev_handler (
     OUT   MANDATORY hid::types::storage_t&  out_data, 
     OUT   MANDATORY uint32_t&           error_code 
 ) {
+    UNUSED ( in_data );
     out_data.resize(20);
     error_code = 100;
 }
@@ -127,7 +126,7 @@ static void socket_open (
         sock_state = sock_state_t::SOCK_ERR_OPEN;
 
         sock = ::socket ( af_mode, SOCK_STREAM, 0 );
-        if ( sock != SOCK_INVALID_SOCK ) {
+        if ( sock_valid (sock) ) {
             sock_state = sock_state_t::SOCK_OK;
         }
 
@@ -151,10 +150,10 @@ static void socket_bind (
 
         if ( conn_type == conn_type_t::CONN_TYPE_SOCK ) {
 
-            int port = atoi ( port_str );
+            u_short port = static_cast<u_short> ( atoi(port_str) );
 
             local_sock.sin_family = AF_INET;
-            local_sock.sin_port   = htons ( port );
+            local_sock.sin_port   = ( htons (port) );
 
             addr_ptr  = reinterpret_cast<struct sockaddr*>( &local_sock );
             addr_size = static_cast<int> ( sizeof(local_sock) );
@@ -250,7 +249,7 @@ static void socket_accept (
 
         client_sock = accept ( server_sock, NULL, NULL );
 
-        if( client_sock != SOCK_INVALID_SOCK ) {
+        if ( sock_valid(client_sock) ) {
             sock_state = sock_state_t::SOCK_OK;
         }
     }
@@ -272,12 +271,12 @@ static void socket_connect (
 
         if ( conn_type == conn_type_t::CONN_TYPE_FILE ) {
             addr_file.sun_family = AF_UNIX;
-            strncpy ( addr_file.sun_path, port.c_str(), UNIX_PATH_MAX-1 );
+            strncpy ( addr_file.sun_path, port.c_str(), sizeof(addr_file.sun_path) - 1);
             con_addr_ptr = (struct sockaddr*) &addr_file;
             con_addr_len = (int) SUN_LEN ( &addr_file );
         }
         if ( conn_type == conn_type_t::CONN_TYPE_SOCK ) {
-            int port_ = atoi (port.c_str());
+            uint16_t port_ = static_cast<uint16_t> ( atoi (port.c_str()) );
             addr_sock.sin_family = AF_INET;
             addr_sock.sin_port = htons(port_);
             (void)inet_pton ( AF_INET, "127.0.0.1", &addr_sock.sin_addr );
@@ -385,9 +384,9 @@ static void frame_rx (
 
             sock_checkpoint_t end_time = sock_time_src_t::now() + delay;
 
-            char* rx_pos    = nullptr;
-            int   rx_part   = 0;
-            int   rx_cnt    = 0;
+            char*   rx_pos    = nullptr;
+            int     rx_part   = 0;
+            size_t  rx_cnt    = 0;
 
             sock_nonblocking (sock);
 
@@ -561,7 +560,7 @@ void SocketServer::StartClient ( sock_state_t& conn_res, os_sock_t client_sock )
 
 void SocketServer::Service () {
 
-    os_sock_t server_socket = (os_sock_t) SOCK_INVALID_SOCK;
+    os_sock_t server_socket = static_cast<os_sock_t> (SOCK_INVALID_SOCK);
 
     int err_cnt_start = 0;
 
@@ -576,7 +575,7 @@ void SocketServer::Service () {
             break;
         }
 
-        if ( server_socket == SOCK_INVALID_SOCK ) {
+        if ( ! sock_valid(server_socket) ) {
 
             sock_state_t init_res = sock_state_t::SOCK_OK;
             socket_open   ( init_res, m_conn_type, server_socket );
@@ -596,7 +595,7 @@ void SocketServer::Service () {
         err_cnt_start = 0;
 
         {   // Accept new connection(s)
-            os_sock_t client_sock = SOCK_INVALID_SOCK;
+            os_sock_t client_sock = static_cast<os_sock_t> (SOCK_INVALID_SOCK);
             sock_state_t conn_res = sock_state_t::SOCK_OK;
             socket_wait   ( conn_res, server_socket, std::chrono::seconds(1) );
             socket_accept ( conn_res, server_socket, client_sock );
@@ -727,6 +726,7 @@ void SocketServer::ShellReadPayload ( os_sock_t socket, sock_state_t& state, soc
 
 void SocketServer::ShellCmdExec ( os_sock_t socket, sock_state_t& state, sock_transaction_t& tr ) {
 
+    UNUSED (socket);
     if ( state == sock_state_t::SOCK_OK ) {
         
         try {
@@ -805,7 +805,7 @@ void SocketServer::LogTransaction ( const sock_transaction_t& tr, const sock_sta
 
 void SocketServer::ShellClose ( os_sock_t socket, const sock_state_t& state ) {
 
-    if ( socket != SOCK_INVALID_SOCK ) {
+    if ( sock_valid (socket) ) {
 
         hid::stream::stream_params_t params;
         hid::types::storage_t        out_frame;
@@ -905,14 +905,14 @@ SocketClient::SocketClient () {
 
     sock_init ();
     m_conn_type = conn_type_t::CONN_TYPE_UNKNOW;
-    m_sock = (os_sock_t) SOCK_INVALID_SOCK;
+    m_sock = static_cast<os_sock_t> (SOCK_INVALID_SOCK);
 }
 
 SocketClient::~SocketClient () {
 
-    if ( m_sock != SOCK_INVALID_SOCK ) {
+    if ( sock_valid (m_sock) ) {
         os_sockclose (m_sock);
-        m_sock = SOCK_INVALID_SOCK;
+        m_sock = static_cast<os_sock_t> (SOCK_INVALID_SOCK);
     }
 
 }
@@ -1039,6 +1039,8 @@ void SocketClient::LogTransaction ( const sock_transaction_t& tr, const sock_sta
 }
 
 bool SocketClient::Transaction ( std::chrono::milliseconds delayMs, const hid::types::storage_t& out_fame, hid::types::storage_t& in_frame ) {
+
+    UNUSED ( delayMs );
 
     sock_state_t state = sock_state_t::SOCK_OK;
 
