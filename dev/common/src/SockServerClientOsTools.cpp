@@ -27,7 +27,7 @@ bool sock_valid ( os_sock_t& sock ) {
 
     bool ret_val = true;
 
-    if ( sock == (os_sock_t) (SOCK_INVALID_SOCK) ) {
+    if ( sock == static_cast<os_sock_t> (SOCK_INVALID_SOCK) ) {
         ret_val = false;
     }
 
@@ -96,6 +96,6 @@ void os_sockclose ( os_sock_t& sock ) {
             close ( sock );
         #endif
 
-        sock = (os_sock_t) (SOCK_INVALID_SOCK);
+        sock = static_cast<os_sock_t> (SOCK_INVALID_SOCK);
     }
 }

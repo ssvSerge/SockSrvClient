@@ -120,7 +120,7 @@ namespace socket {
             void  LogTransaction   ( const sock_transaction_t& tr, const sock_state_t conn_state );
 
         private:
-            void  StartClient      ( sock_state_t& conn_res, os_sock_t client_sock );
+            void  StartClient      ( sock_state_t& sock_state, os_sock_t client_sock );
             bool  ConnMoveToExpired ();
             bool  ConnProcessExpired ();
 
@@ -129,7 +129,7 @@ namespace socket {
 
             std::atomic<bool>   m_stop;
             std::thread         m_server_thread;
-            std::atomic<int>    m_instance_cnt;
+            std::atomic<bool>   m_instance_active;
 
             clients_list_t      m_clients;
 
