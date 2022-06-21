@@ -1,4 +1,5 @@
 #include <HidOsTypes.h>
+#include <stdio.h>
 
 #ifndef PLATFORM
     #error "PLATFORM is not defined"
@@ -98,4 +99,21 @@ void os_sockclose ( os_sock_t& sock ) {
 
         sock = static_cast<os_sock_t> (SOCK_INVALID_SOCK);
     }
+}
+
+void os_sock_nodelay ( os_sock_t& fd ) {
+
+    #if ( PLATFORM == PLATFORM_WINDOWS )
+
+        DWORD option_value = 1;
+        int option_len = sizeof(option_value);
+        setsockopt ( fd, IPPROTO_TCP, TCP_NODELAY, reinterpret_cast<char*>(&option_value), option_len );
+
+    #elif (PLATFORM == PLATFORM_LINUX)
+
+        int option_value = 1;
+        socklen_t option_len = sizeof(option_value);
+        setsockopt (fd, IPPROTO_TCP, TCP_NODELAY, &set_flag, option_len);
+
+    #endif
 }

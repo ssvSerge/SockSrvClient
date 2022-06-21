@@ -131,9 +131,19 @@ static void socket_open (
 
         sock = ::socket ( af_mode, SOCK_STREAM, 0 );
         if ( sock_valid (sock) ) {
+            os_sock_nodelay ( sock );
             sock_state = sock_state_t::SOCK_OK;
         }
 
+    }
+}
+
+static void socket_nodelay ( 
+    INOUT MANDATORY sock_state_t&       sock_state, 
+    INOUT MANDATORY os_sock_t&          sock 
+) {
+    if ( sock_state == sock_state_t::SOCK_OK ) {
+        os_sockclose (sock);
     }
 }
 
@@ -979,6 +989,7 @@ void SocketClient::connect ( sock_state_t& state ) {
 
     os_sockclose   ( m_sock );
     socket_open    ( state, m_conn_type, m_sock );
+    socket_nodelay ( state, m_sock );
     socket_connect ( state, m_sock, m_conn_type, m_port );
 
     if ( state == sock_state_t::SOCK_OK ) {

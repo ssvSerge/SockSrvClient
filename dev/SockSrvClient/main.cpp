@@ -102,7 +102,7 @@ static void test_sock_03 () {
     bool ret_val;
 
 
-    hid::socket::SOCK_TEXT_TX_DELAY = 3;
+    hid::socket::SOCK_TEXT_TX_DELAY = 0;
 
     srv.Start ( port, conn_type );
     srv.SetHandler ( cmd_handler );
@@ -119,7 +119,7 @@ static void test_sock_03 () {
 
 int main () {
 
-    // test_sock_01 ();
+    test_sock_01 ();
     // test_file_02 ();
     test_sock_03 ();
 
