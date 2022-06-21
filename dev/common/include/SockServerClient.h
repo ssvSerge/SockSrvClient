@@ -121,8 +121,6 @@ namespace socket {
 
         private:
             void  StartClient      ( sock_state_t& sock_state, os_sock_t client_sock );
-            bool  ConnMoveToExpired ();
-            bool  ConnProcessExpired ();
 
         private:
             std::mutex          m_controller;
@@ -152,7 +150,7 @@ namespace socket {
 
         private:
             void connect        ( sock_state_t& state );
-            void SendPrefix     ( sock_state_t& state, sock_transaction_t& tr, const hid::types::storage_t& out_fame );
+            void SendPrefix     ( sock_state_t& state, std::chrono::milliseconds delay_ms, sock_transaction_t& tr, const hid::types::storage_t& out_fame );
             void SendPayload    ( sock_state_t& state, sock_transaction_t& tr, const hid::types::storage_t& out_fame );
             void RecvHeader     ( sock_state_t& state, sock_transaction_t& tr );
             void RecvPayload    ( sock_state_t& state, sock_transaction_t& tr, hid::types::storage_t& in_frame );

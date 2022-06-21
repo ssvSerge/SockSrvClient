@@ -11,9 +11,13 @@ namespace hid {
 
 namespace stream {
 
-    #define PREFIX_MAGIC    (0x37464564)
+    using time_source_t      = std::chrono::steady_clock;
+    using time_point_t       = std::chrono::time_point<time_source_t>;
+    using time_duration_ns_t = std::chrono::nanoseconds;
+    using time_duration_us_t = std::chrono::microseconds;
+    using time_duration_ms_t = std::chrono::milliseconds;
 
-    enum class StreamCmd : uint32_t {
+    enum class cmd_t : uint32_t {
         STREAM_CMD_NONE             =   0,
         STREAM_CMD_REQUEST          = 100,
         STREAM_CMD_RESPONSE         = 101,
@@ -22,42 +26,34 @@ namespace stream {
         STREAM_CMD_ERROR            = 104
     };
 
-    class stream_params_t {
+    class params_t {
         public:
-            StreamCmd       command;
-            uint32_t        code;
-            uint32_t        len;
+            cmd_t       command;
+            uint32_t    code;
+            uint32_t    len;
     };
 
-    class StreamPrefix {
-
-        using time_source_t      = std::chrono::steady_clock;
-        using time_point_t       = std::chrono::time_point<time_source_t>;
-        using time_duration_ns_t = std::chrono::nanoseconds;
-        using time_duration_ms_t = std::chrono::milliseconds;
+    class Prefix {
 
         public:
 
-            static bool SetParams (const stream_params_t& params, hid::types::storage_t& storage) {
+            static bool SetParams ( const params_t& params, hid::types::storage_t& storage ) {
 
                 bool ret_val = false;
 
                 try {
 
-                    const size_t len = size ();
-                    storage.resize ( len );
+                    storage.resize ( PrefixSize() );
 
                     uint32_t* ptr = reinterpret_cast<uint32_t*> (storage.data ());
 
-                    memset ( storage.data (), 0xCC, len );
+                    ptr [ OFFSET_MAGIC ] = PREFIX_MAGIC;
+                    ptr [ OFFSET_CMD   ] = static_cast<uint32_t> (params.command);
+                    ptr [ OFFSET_CODE  ] = params.code;
+                    ptr [ OFFSET_EXP   ] = 0; // TIMEOUT_MS. Shall be configured separately.
+                    ptr [ OFFSET_LEN   ] = params.len;
 
-                    ptr [0] = PREFIX_MAGIC;
-                    ptr [1] = static_cast<uint32_t> (params.command);
-                    ptr [2] = params.code;
-                    ptr [3] = 0; // Placement for TIMEOUT.
-                    ptr [4] = 0; // Shall be configured separately.
-                    ptr [5] = params.len;
-                    ptr [6] = 0xFFFFFFFF - ptr [0] - ptr [1] - ptr [2] - ptr [3] - ptr [4] - ptr [5];
+                    CrcSet( storage );
 
                     ret_val = true;
 
@@ -68,50 +64,34 @@ namespace stream {
                 return ret_val;
             }
 
-            static bool SetTimeout ( uint32_t timeout_ms, hid::types::storage_t& storage )  {
-
+            static bool SetTimeout ( std::chrono::milliseconds timeout_ms, hid::types::storage_t& storage )  {
                 bool ret_val = false;
-
-                if ( storage.size () == size() ) {
-
-                    if ( timeout_ms > 0 ) {
-
-                        const time_duration_ms_t delay_ms (timeout_ms);
-
-                        const time_point_t  my_time_ns   = time_source_t::now ();
-                        const time_point_t  exp_time_ns  = (my_time_ns + delay_ms);
-                        const uint64_t      abs_time_ns  = exp_time_ns.time_since_epoch().count();
-
-                        uint32_t* const    ptr            = reinterpret_cast<uint32_t*> ( storage.data () );
-                        uint64_t* const    exp_ptr        = reinterpret_cast<uint64_t*> ( storage.data () + TsOffset() );
-
-                        *exp_ptr = abs_time_ns;
-                        ptr [6] = 0xFFFFFFFF - ptr [0] - ptr [1] - ptr [2] - ptr [3] - ptr [4] - ptr [5];
-                    }
-
-
+                if ( storage.size () == PrefixSize() ) {
+                    TsSet  ( timeout_ms.count(), storage );
+                    CrcSet ( storage );
                     ret_val = true;
                 }
-
                 return ret_val;
             }
 
-            static bool GetParams ( const hid::types::storage_t& storage, stream_params_t& params )  {
+            static bool SetTimeout ( std::chrono::seconds timeout_sec, hid::types::storage_t& storage ) {
+                auto timeout_ms = std::chrono::duration_cast<std::chrono::milliseconds>(timeout_sec);
+                return SetTimeout ( timeout_ms, storage );
+            }
+
+            static bool GetParams ( const hid::types::storage_t& storage, params_t& params )  {
 
                 bool ret_val = false;
 
-                params.command = StreamCmd::STREAM_CMD_NONE;
+                params.command = cmd_t::STREAM_CMD_NONE;
                 params.code    = 0;
                 params.len     = 0;
 
                 if ( Valid ( storage ) ) {
-
                     const uint32_t* const ptr = reinterpret_cast<const uint32_t*> ( storage.data() );
-
-                    params.command   = static_cast<StreamCmd> (ptr [1]);
-                    params.code      = ptr [2];
-                    params.len       = ptr [5];
-
+                    params.command   = static_cast<cmd_t> ( ptr[OFFSET_CMD] );
+                    params.code      = ptr [ OFFSET_CODE ];
+                    params.len       = ptr [ OFFSET_LEN ];
                     ret_val = true;
                 }
 
@@ -124,106 +104,136 @@ namespace stream {
 
                 is_valid = false;
 
-                if ( storage.size () == size() ) {
-
-                    const uint64_t* const expiration_time_ns = reinterpret_cast<const uint64_t*> ( storage.data () + TsOffset() );
-
-                    if ( expiration_time_ns [0] != 0 ) {
+                if ( storage.size () == PrefixSize() ) {
+                    uint32_t exp_time_ms = TsGet( storage );
+                    if ( exp_time_ms != 0 ) {
                         is_valid = true;
                     }
-
                     ret_val = true;
                 }
 
                 return ret_val;
             }
 
-            static bool ExpirationTimeGet ( const hid::types::storage_t& storage, bool& is_expired, struct timeval& tv )  {
+            static bool ExpirationTimeGet ( const hid::types::storage_t& storage, time_point_t& tp_expiration )  {
 
                 bool ret_val = false;
 
-                bool is_expiration_defined = false;
+                if ( Valid(storage) ) {
 
-                is_expired = true; // Assume we're expired.
-                tv.tv_sec  = 0;    // Seconds
-                tv.tv_usec = 0;    // microseconds
+                    time_point_t tp_now = time_source_t::now ();
 
-                if ( ExpirationTimeValid(storage, is_expiration_defined) ) {
+                    bool expiration_defined = false;
+                    bool expiration_valid   = false;
 
-                    if ( is_expiration_defined ) {
+                    expiration_valid = ExpirationTimeValid ( storage, expiration_defined );
 
-                        const uint64_t* const src_ptr = reinterpret_cast<const uint64_t*> ( storage.data () + TsOffset() );
-
-                        if ( src_ptr[0] != 0 ) {
-
-                            const time_duration_ns_t exp_time_ns (src_ptr[0]);
-                            const time_duration_ms_t deviation_time_ms ( 1 );
-                            const time_point_t tp_now  = time_source_t::now ();
-                            const time_point_t tp_exp { exp_time_ns - deviation_time_ms };
-
-                            auto test = (tp_exp - tp_now );
-                                  
-                            if ( tp_now < tp_exp ) {
-
-                                time_duration_ns_t wait_time_ns = (tp_exp - tp_now);
-                                uint64_t microseconds_cnt = wait_time_ns.count () / 1000;
-
-                                tv.tv_sec  = static_cast<long> (microseconds_cnt / 1000000);  // Seconds
-                                tv.tv_usec = static_cast<long> (microseconds_cnt % 1000000);  // microseconds
-
-                                is_expired = false;
-                            }
-
-                        }
-
-                    }
-
-                    ret_val = true;
-
-                }
-
-                return ret_val;
-
-            }
-
-            static bool Valid ( const hid::types::storage_t& storage )  {
-                
-                bool ret_val = false;
-
-                size_t len = size();
-                
-                if ( storage.size() == len ) {
-
-                    const uint32_t* const ptr = reinterpret_cast<const uint32_t*> ( storage.data() );
-
-                    uint32_t crc = 0;
-
-                    crc = 0xFFFFFFFF - ptr[0] - ptr[1] - ptr[2] - ptr[3] - ptr[4] - ptr[5];
-
-                    if ( crc == ptr [6] ) {
+                    if ( expiration_valid && expiration_defined ) {
+                        const uint32_t* const ptr = reinterpret_cast<const uint32_t*> (storage.data ());
+                        const time_duration_ms_t  tp_shift ( ptr [OFFSET_EXP] );
+                        tp_expiration = tp_now + tp_shift;
                         ret_val = true;
                     }
+                }
+
+                return ret_val;
+
+            }
+
+            static void WaitTimeGet ( time_point_t& tp_expiration, struct timeval& wait_time, bool& is_expired ) {
+                
+                time_point_t tp_now = time_source_t::now();
+
+                if ( tp_now >= tp_expiration ) {
+                    is_expired = true;
+                } else {
+                    is_expired = false;
+                    auto duration = (tp_expiration - tp_now);
+                    time_duration_us_t duration_us = std::chrono::duration_cast<std::chrono::microseconds> (duration);
+
+                    wait_time.tv_sec  = static_cast<int> (duration_us.count()  / 1000000);
+                    wait_time.tv_usec = static_cast<int> (duration_us.count () % 1000000);
+                }
+
+            }
+
+            static bool Valid ( const hid::types::storage_t& storage ) {
+                
+                bool ret_val = false;
+
+                if ( storage.size() == PrefixSize() ) {
+
+                    const uint32_t* const ptr = reinterpret_cast<const uint32_t*> (storage.data ());
+
+                    uint32_t crc_cals  =  CrcCalc ( storage );
+                    uint32_t crc_recv  =  ptr [ OFFSET_CRC ];
+
+                    ret_val = (crc_cals == crc_recv);
                 }
 
                 return ret_val;                
             }
 
-            static size_t size () {
+            static constexpr size_t PrefixSize () {
                 // +  0 uint32_t     magic
                 // +  4 uint32_t     command
                 // +  8 uint32_t     code
                 // + 12 uint64_t     timestamp
-                // + 20 uint32_t     payload_len
-                // + 24 uint32_t     crc
-                // + 28
-                return 28;
+                // + 16 uint32_t     payload_len
+                // + 20 uint32_t     crc
+                // + 24
+                return 24;
             }
 
         private:
-
-            static constexpr int TsOffset()  {
-                return 12;
+            static uint32_t TsGet ( const hid::types::storage_t& storage ) {
+                const uint32_t* ptr = reinterpret_cast<const uint32_t*> (storage.data ());
+                return ptr[ OFFSET_EXP ];
             }
+
+            static void TsSet ( size_t ms_cnt, hid::types::storage_t& storage ) {
+                uint32_t* ptr = reinterpret_cast<uint32_t*> (storage.data ());
+                ptr [ OFFSET_EXP ] = static_cast<uint32_t> (ms_cnt);
+            }
+
+            static void CrcSet ( hid::types::storage_t& storage ) {
+
+                uint32_t* ptr = reinterpret_cast<uint32_t*> (storage.data ());
+
+                uint32_t  crc = 0xFFFFFFFF;
+
+                crc -= ptr [ OFFSET_MAGIC ];
+                crc -= ptr [ OFFSET_CMD   ];
+                crc -= ptr [ OFFSET_CODE  ];
+                crc -= ptr [ OFFSET_EXP   ];
+                crc -= ptr [ OFFSET_LEN   ];
+
+                ptr [OFFSET_CRC] = crc;
+            }
+
+            static uint32_t CrcCalc ( const hid::types::storage_t& storage ) {
+
+                const uint32_t* const ptr = reinterpret_cast<const uint32_t*> (storage.data ());
+
+                uint32_t crc = 0xFFFFFFFF;
+
+                crc -= ptr [OFFSET_MAGIC];
+                crc -= ptr [OFFSET_CMD];
+                crc -= ptr [OFFSET_CODE];
+                crc -= ptr [OFFSET_EXP];
+                crc -= ptr [OFFSET_LEN];
+
+                return crc;
+            }
+
+        private:
+            static constexpr int OFFSET_MAGIC = 0;
+            static constexpr int OFFSET_CMD   = 1;
+            static constexpr int OFFSET_CODE  = 2;
+            static constexpr int OFFSET_EXP   = 3;
+            static constexpr int OFFSET_LEN   = 4;
+            static constexpr int OFFSET_CRC   = 5;
+            static constexpr int PREFIX_MAGIC = 0x37464564;
     };
 
 }

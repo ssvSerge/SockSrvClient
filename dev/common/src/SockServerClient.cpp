@@ -20,6 +20,10 @@ constexpr int    SOCK_MAX_ERRORS_CNT    = 15;
 
 //---------------------------------------------------------------------------//
 
+uint32_t         SOCK_TEXT_TX_DELAY     = 0;
+
+//---------------------------------------------------------------------------//
+
 static void dummy_ev_handler ( 
     IN    MANDATORY const hid::types::storage_t& in_data, 
     OUT   MANDATORY hid::types::storage_t&  out_data, 
@@ -349,7 +353,16 @@ static void frame_tx (
                 }
 
                 tx_pos  = static_cast<const uint8_t*> (out_frame.data ()+tx_cnt);
-                tx_part = static_cast<int> (out_frame.size()-tx_cnt);
+
+                {   // Testing of DELAYS in the data transfer. 
+                    if ( SOCK_TEXT_TX_DELAY != 0 ) {
+                        tx_part = 1;
+                        std::this_thread::sleep_for ( std::chrono::milliseconds ( SOCK_TEXT_TX_DELAY ) );
+                    } else {
+                        tx_part = static_cast<int> (out_frame.size () - tx_cnt);
+                    }
+                }
+
 
                 // std::this_thread::sleep_for( std::chrono::milliseconds(1) );
                 // tx_part = 1;
@@ -401,7 +414,7 @@ static void frame_rx (
                 }
 
                 rx_pos  = reinterpret_cast<char*> ( inp_frame.data () + rx_cnt );
-                rx_part = static_cast<int>        ( inp_frame.size () - rx_cnt );
+                rx_part = static_cast<int> (inp_frame.size () - rx_cnt);
 
                 int io_res = ::recv ( sock, rx_pos, rx_part, 0);
 
@@ -694,7 +707,7 @@ void SocketServer::ShellCmdStart ( os_sock_t socket, sock_state_t& state, sock_t
 
     try {
         tr.start ( SOCK_COMM_TIMEOUT );
-        tr.inp_hdr.resize ( hid::stream::StreamPrefix::size() );
+        tr.inp_hdr.resize ( hid::stream::Prefix::PrefixSize() );
     } catch ( ... ) {
         TTRACE ( "Server: Exception in Cmd Start. \n" );
         state = sock_state_t::SOCK_ERR_GENERAL;
@@ -707,9 +720,9 @@ void SocketServer::ShellReadPrefix ( os_sock_t socket, sock_state_t& state, sock
 
             frame_rx ( state, socket, tr.tv_expiration, tr.inp_hdr );
             if ( state == sock_state_t::SOCK_OK ) {
-                if ( hid::stream::StreamPrefix::Valid(tr.inp_hdr) ) {
-                    hid::stream::stream_params_t params;
-                    hid::stream::StreamPrefix::GetParams ( tr.inp_hdr, params );
+                if ( hid::stream::Prefix::Valid(tr.inp_hdr) ) {
+                    hid::stream::params_t params;
+                    hid::stream::Prefix::GetParams ( tr.inp_hdr, params );
                     tr.inp_pay.resize ( params.len );
                     tr.inp_cmd = static_cast<int> (params.command);
                     tr.checkpoint_set ( sock_checkpoint_type_t::CHECKPOINT_RX_HDR );
@@ -749,20 +762,20 @@ void SocketServer::ShellCmdExec ( os_sock_t socket, sock_state_t& state, sock_tr
         
         try {
 
-            hid::stream::StreamCmd out_cmd = hid::stream::StreamCmd::STREAM_CMD_ERROR;
-            uint32_t out_code = static_cast<uint32_t> (hid::stream::StreamCmd::STREAM_CMD_ERROR);
+            hid::stream::cmd_t out_cmd = hid::stream::cmd_t::STREAM_CMD_ERROR;
+            uint32_t out_code = static_cast<uint32_t> (hid::stream::cmd_t::STREAM_CMD_ERROR);
 
             {   // Exec command
-                hid::stream::StreamCmd inp_cmd = static_cast<hid::stream::StreamCmd> (tr.inp_cmd);
+                hid::stream::cmd_t inp_cmd = static_cast<hid::stream::cmd_t> (tr.inp_cmd);
 
                 tr.out_pay.clear();
 
-                if ( inp_cmd == hid::stream::StreamCmd::STREAM_CMD_PING_REQUEST ) {
-                    out_cmd  = hid::stream::StreamCmd::STREAM_CMD_PING_RESPONSE;
+                if ( inp_cmd == hid::stream::cmd_t::STREAM_CMD_PING_REQUEST ) {
+                    out_cmd  = hid::stream::cmd_t::STREAM_CMD_PING_RESPONSE;
                     out_code = 0;
                 } else 
-                if ( inp_cmd == hid::stream::StreamCmd::STREAM_CMD_REQUEST ) {
-                    out_cmd  = hid::stream::StreamCmd::STREAM_CMD_RESPONSE;
+                if ( inp_cmd == hid::stream::cmd_t::STREAM_CMD_REQUEST ) {
+                    out_cmd  = hid::stream::cmd_t::STREAM_CMD_RESPONSE;
                     (m_ev_handler) ( tr.inp_pay, tr.out_pay, out_code );
                 }
             }
@@ -770,12 +783,12 @@ void SocketServer::ShellCmdExec ( os_sock_t socket, sock_state_t& state, sock_tr
             tr.checkpoint_set ( sock_checkpoint_type_t::CHECKPOINT_EXEC );
 
             {   // Format response.
-                hid::stream::stream_params_t params;
+                hid::stream::params_t params;
                 params.command = out_cmd;
                 params.code    = out_code;
                 params.len     = static_cast<uint32_t> (tr.out_pay.size() );
 
-                hid::stream::StreamPrefix::SetParams ( params, tr.out_hdr );
+                hid::stream::Prefix::SetParams ( params, tr.out_hdr );
 
             }
 
@@ -838,14 +851,14 @@ void SocketServer::ShellClose ( os_sock_t socket, const sock_state_t& state ) {
 
         if ( state != sock_state_t::SOCK_ERR_CLOSED ) {
 
-            hid::stream::stream_params_t params;
-            hid::types::storage_t        out_frame;
+            hid::stream::params_t   params;
+            hid::types::storage_t   out_frame;
 
-            params.command = hid::stream::StreamCmd::STREAM_CMD_ERROR;
+            params.command = hid::stream::cmd_t::STREAM_CMD_ERROR;
             params.code    = static_cast<uint32_t> (state);
             params.len     = 0;
 
-            hid::stream::StreamPrefix::SetParams ( params, out_frame );
+            hid::stream::Prefix::SetParams ( params, out_frame );
 
             sock_state_t resp = sock_state_t::SOCK_OK;
         
@@ -905,41 +918,6 @@ bool SocketServer::Shell ( os_sock_t socket ) {
 
 }
 
-bool SocketServer::ConnMoveToExpired () {
-
-    bool acquired;
-
-    acquired = m_controller.try_lock ();
-
-    if( !acquired ) {
-        return true;
-    }
-
-    try {
-
-        // for( auto pos = m_pending_list.begin (); pos != m_pending_list.end (); ) {
-        //     if( pos->is_expired () ) {
-        //         m_rejected_list.push_back ( *pos );
-        //         pos = m_pending_list.erase ( pos );
-        //     } else {
-        //         pos++;
-        // 
-        //     }
-        // }
-
-    } catch( ... ) {
-    }
-
-    m_controller.unlock ();
-
-    return true;
-}
-
-bool SocketServer::ConnProcessExpired () {
-
-    return true;
-}
-
 //---------------------------------------------------------------------------//
 
 SocketClient::SocketClient () {
@@ -995,17 +973,17 @@ void SocketClient::connect ( sock_state_t& state ) {
     std::this_thread::sleep_for ( std::chrono::milliseconds (100) );
 }
 
-void SocketClient::SendPrefix ( sock_state_t& state, sock_transaction_t& tr, const hid::types::storage_t& out_fame ) {
+void SocketClient::SendPrefix ( sock_state_t& state, std::chrono::milliseconds delay_ms, sock_transaction_t& tr, const hid::types::storage_t& out_fame ) {
 
     if ( state == sock_state_t::SOCK_OK ) {
         try {
 
-            hid::stream::stream_params_t  params = {};
+            hid::stream::params_t  params = {};
 
-            params.command  =  hid::stream::StreamCmd::STREAM_CMD_REQUEST;
+            params.command  =  hid::stream::cmd_t::STREAM_CMD_REQUEST;
             params.len      =  static_cast<uint32_t> ( out_fame.size() );
-
-            hid::stream::StreamPrefix::SetParams ( params, tr.out_hdr );
+            hid::stream::Prefix::SetParams ( params, tr.out_hdr );
+            hid::stream::Prefix::SetTimeout ( delay_ms, tr.out_hdr );
 
             frame_tx ( state, m_sock, tr.out_hdr );
 
@@ -1051,14 +1029,14 @@ void SocketClient::RecvHeader ( sock_state_t& state, sock_transaction_t& tr ) {
     if ( state == sock_state_t::SOCK_OK ) {
         try {
 
-            tr.inp_hdr.resize ( hid::stream::StreamPrefix::size() ); 
+            tr.inp_hdr.resize ( hid::stream::Prefix::PrefixSize() );
 
             frame_rx ( state, m_sock, tr.tv_expiration, tr.inp_hdr );
 
             if ( state == sock_state_t::SOCK_OK ) {
-                if ( hid::stream::StreamPrefix::Valid(tr.inp_hdr) ) {
-                    hid::stream::stream_params_t params;
-                    hid::stream::StreamPrefix::GetParams ( tr.inp_hdr, params );
+                if ( hid::stream::Prefix::Valid(tr.inp_hdr) ) {
+                    hid::stream::params_t params;
+                    hid::stream::Prefix::GetParams ( tr.inp_hdr, params );
                     tr.inp_pay.resize ( params.len );
                     tr.inp_cmd = static_cast<int> (params.command);
                     tr.checkpoint_set ( sock_checkpoint_type_t::CHECKPOINT_RX_HDR );
@@ -1126,9 +1104,7 @@ void SocketClient::LogTransaction ( const sock_transaction_t& tr, const sock_sta
     }
 }
 
-bool SocketClient::Transaction ( std::chrono::milliseconds delayMs, const hid::types::storage_t& out_fame, hid::types::storage_t& in_frame ) {
-
-    UNUSED ( delayMs );
+bool SocketClient::Transaction ( std::chrono::milliseconds delay_ms, const hid::types::storage_t& out_fame, hid::types::storage_t& in_frame ) {
 
     sock_state_t state = sock_state_t::SOCK_OK;
 
@@ -1138,8 +1114,8 @@ bool SocketClient::Transaction ( std::chrono::milliseconds delayMs, const hid::t
 
         in_frame.clear();
 
-        tr.start    ( SOCK_COMM_TIMEOUT   );
-        SendPrefix  ( state, tr, out_fame );
+        tr.start    ( delay_ms );
+        SendPrefix  ( state, delay_ms, tr, out_fame );
         SendPayload ( state, tr, out_fame );
         RecvHeader  ( state, tr );
         RecvPayload ( state, tr, tr.inp_pay );
@@ -1151,7 +1127,7 @@ bool SocketClient::Transaction ( std::chrono::milliseconds delayMs, const hid::t
             state = sock_state_t::SOCK_OK;
             connect     ( state );
 
-            SendPrefix  ( state, tr, out_fame );
+            SendPrefix  ( state, delay_ms, tr, out_fame );
             SendPayload ( state, tr, out_fame );
             RecvHeader  ( state, tr );
             RecvPayload ( state, tr, tr.inp_pay );
