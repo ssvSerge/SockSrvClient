@@ -4,7 +4,7 @@
 #include <cassert>
 
 #include <StreamPrefix.h>
-#include <Serializer.h>
+// #include <Serializer.h>
 
 
 static void _test_no_expiration () {
@@ -12,7 +12,7 @@ static void _test_no_expiration () {
     hid::types::storage_t       storage;
     hid::stream::params_t       params_in;
     hid::stream::params_t       params_out;
-    hid::stream::time_point_t   tp_expiration;
+    hid::stream::duration_ms_t  expiration_ms;
 
     bool is_storage_valid;
     bool is_expiration_valid;
@@ -27,7 +27,7 @@ static void _test_no_expiration () {
 
     hid::stream::Prefix::GetParams ( storage, params_in );
     hid::stream::Prefix::ExpirationTimeValid ( storage, is_expiration_valid );
-    hid::stream::Prefix::ExpirationTimeGet ( storage, tp_expiration );
+    hid::stream::Prefix::ExpirationTimeGet ( storage, expiration_ms );
 
     assert ( is_storage_valid );
     assert ( ! is_expiration_valid );
@@ -41,7 +41,7 @@ static void _test_no_with_expiration () {
     hid::types::storage_t       storage;
     hid::stream::params_t       params_in;
     hid::stream::params_t       params_out;
-    hid::stream::time_point_t   tp_expiration;
+    hid::stream::duration_ms_t  expiration_ms;
 
     bool is_storage_valid;
     bool is_expiration_valid;
@@ -58,7 +58,7 @@ static void _test_no_with_expiration () {
 
     hid::stream::Prefix::GetParams ( storage, params_in );
     hid::stream::Prefix::ExpirationTimeValid ( storage, is_expiration_valid );
-    hid::stream::Prefix::ExpirationTimeGet ( storage, tp_expiration );
+    hid::stream::Prefix::ExpirationTimeGet ( storage, expiration_ms );
 
     assert ( is_storage_valid );
     assert ( is_expiration_valid );
@@ -70,60 +70,34 @@ static void _test_no_with_expiration () {
 static void _test_milliseconds () {
 
     hid::types::storage_t storage;
-    bool                  is_expired;
-    struct timeval        tv;
     int                   wait_time_ms = 5 * 1000;
 
     hid::stream::params_t       params = {};
-    hid::stream::time_point_t   exp_time;
+    hid::stream::duration_ms_t  expiration_ms;
 
     hid::stream::Prefix::SetParams  ( params, storage );
     hid::stream::Prefix::SetTimeout ( std::chrono::milliseconds ( wait_time_ms ), storage );
 
-    hid::stream::Prefix::ExpirationTimeGet ( storage, exp_time );
+    hid::stream::Prefix::ExpirationTimeGet ( storage, expiration_ms );
 
-    hid::stream::time_point_t start_time = hid::stream::time_source_t::now ();
-    while( true ) {
-        hid::stream::Prefix::WaitTimeGet ( exp_time, tv, is_expired );
-        if ( is_expired ) {
-            break;
-        }
-        std::this_thread::sleep_for ( std::chrono::milliseconds ( 10 ) );
-    }
-    hid::stream::time_point_t end_time = hid::stream::time_source_t::now();
-
-    std::cout << "Wait time: " << std::chrono::duration_cast<std::chrono::milliseconds> (end_time - start_time).count() << "ms; ";
-    std::cout << "Expected time: " << wait_time_ms << "ms; " << std::endl;
+    assert ( wait_time_ms == expiration_ms.count() );
     return;
 }
 
 static void _test_seconds () {
 
     hid::types::storage_t storage;
-    bool                  is_expired;
-    struct timeval        tv;
-    int                   wait_time_s = 5;
+    uint32_t              wait_time_s = 5;
 
     hid::stream::params_t       params = {};
-    hid::stream::time_point_t   exp_time;
+    hid::stream::duration_ms_t  expiration_ms;
 
     hid::stream::Prefix::SetParams ( params, storage );
     hid::stream::Prefix::SetTimeout ( std::chrono::seconds ( wait_time_s ), storage );
 
-    hid::stream::Prefix::ExpirationTimeGet ( storage, exp_time );
+    hid::stream::Prefix::ExpirationTimeGet ( storage, expiration_ms );
 
-    hid::stream::time_point_t start_time = hid::stream::time_source_t::now ();
-    while( true ) {
-        hid::stream::Prefix::WaitTimeGet ( exp_time, tv, is_expired );
-        if( is_expired ) {
-            break;
-        }
-        std::this_thread::sleep_for ( std::chrono::milliseconds ( 10 ) );
-    }
-    hid::stream::time_point_t end_time = hid::stream::time_source_t::now ();
-
-    std::cout << "Wait time: " << std::chrono::duration_cast<std::chrono::milliseconds> (end_time - start_time).count () << "ms; ";
-    std::cout << "Expected time: " << wait_time_s * 1000 << "ms; " << std::endl;
+    assert ( (wait_time_s * 1000) ==  static_cast<uint32_t> (expiration_ms.count()) );
     return;
 }
 
@@ -132,7 +106,7 @@ static void _test_bad () {
     hid::types::storage_t       storage;
     hid::stream::params_t       params_in;
     hid::stream::params_t       params_out;
-    hid::stream::time_point_t   tp_expiration;
+    hid::stream::duration_ms_t  duration_ms;
 
     bool is_storage_valid;
     bool is_expiration_valid;
@@ -142,6 +116,7 @@ static void _test_bad () {
     params_out.len = 444;
 
     params_in = params_out;
+    duration_ms = hid::stream::duration_ms_t (555);
 
     hid::stream::Prefix::SetParams ( params_out, storage );
     hid::stream::Prefix::SetTimeout ( std::chrono::milliseconds ( 555 ), storage );
@@ -149,12 +124,13 @@ static void _test_bad () {
     storage[12]++;
 
     is_storage_valid    = hid::stream::Prefix::Valid ( storage );
-    is_expiration_valid = hid::stream::Prefix::ExpirationTimeGet ( storage, tp_expiration );
+    is_expiration_valid = hid::stream::Prefix::ExpirationTimeGet ( storage, duration_ms );
 
     hid::stream::Prefix::GetParams ( storage, params_in );
 
     assert ( ! is_storage_valid );
     assert ( ! is_expiration_valid );
+    assert ( duration_ms.count() == 0);
     assert ( params_in.code == 0 );
     assert ( params_in.len == 0);
     assert ( params_in.command == hid::stream::cmd_t::STREAM_CMD_NONE );
@@ -168,5 +144,6 @@ int main () {
     _test_milliseconds ();
     _test_seconds ();
 
+    std::cout << "Done." << std::endl;
     return 0;
 }

@@ -14,13 +14,13 @@ namespace hid {
 
 namespace socket {
 
-    using sock_time_src_t        =  std::chrono::system_clock;
-    using sock_duration_ms_t     =  std::chrono::milliseconds;
-    using sock_checkpoint_t      =  std::chrono::time_point<sock_time_src_t>;
-    using sock_transaction_id_t  =  size_t;
-    using sock_socket_t          =  int;
+    using time_source_t = std::chrono::system_clock;
+    using duration_ns_t = std::chrono::nanoseconds;
+    using duration_us_t = std::chrono::microseconds;
+    using duration_ms_t = std::chrono::milliseconds;
+    using checkpoint_t  = std::chrono::time_point<time_source_t>;
 
-    constexpr auto SOCK_COMM_TIMEOUT = std::chrono::seconds ( 15*60 );
+    constexpr auto SOCK_COMM_TIMEOUT = std::chrono::milliseconds ( 45 * 1000 );
 
     enum class sock_checkpoint_type_t {
         CHECKPOINT_UNKNOWN      =  0,
@@ -66,7 +66,8 @@ namespace socket {
             sock_transaction_t  operator= ( const sock_transaction_t& ref ) = delete;
 
         public:
-            void start ( sock_duration_ms_t expiration_ms );
+            void start ( duration_ms_t expiration_default_ms );
+            void expiration_set ( duration_ms_t expiration_ms );
             void checkpoint_set ( sock_checkpoint_type_t point_type );
             void reset ( void );
 
@@ -78,13 +79,13 @@ namespace socket {
             hid::types::storage_t   out_pay;
 
         public:
-            sock_checkpoint_t       tv_start;
-            sock_checkpoint_t       tv_rcv_hdr;
-            sock_checkpoint_t       tv_rcv_pay;
-            sock_checkpoint_t       tv_exec;
-            sock_checkpoint_t       tv_snt_hdr;
-            sock_checkpoint_t       tv_snt_pay;
-            sock_checkpoint_t       tv_expiration;
+            checkpoint_t    tv_start;
+            checkpoint_t    tv_rcv_hdr;
+            checkpoint_t    tv_rcv_pay;
+            checkpoint_t    tv_exec;
+            checkpoint_t    tv_snt_hdr;
+            checkpoint_t    tv_snt_pay;
+            checkpoint_t    tv_expiration;
     };
 
     typedef std::list<sock_transaction_t> sock_transaction_list_t;
@@ -147,6 +148,7 @@ namespace socket {
             bool Connect ( const char* const port, conn_type_t conn_type );
             void Close ();
             bool Transaction ( std::chrono::milliseconds delayMs, const hid::types::storage_t& out_fame, hid::types::storage_t& in_frame );
+            bool Transaction ( const hid::types::storage_t& out_fame, hid::types::storage_t& in_frame );
 
         private:
             void connect        ( sock_state_t& state );

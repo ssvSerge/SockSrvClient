@@ -11,11 +11,11 @@ namespace hid {
 
 namespace stream {
 
-    using time_source_t      = std::chrono::steady_clock;
-    using time_point_t       = std::chrono::time_point<time_source_t>;
-    using time_duration_ns_t = std::chrono::nanoseconds;
-    using time_duration_us_t = std::chrono::microseconds;
-    using time_duration_ms_t = std::chrono::milliseconds;
+    using time_source_t = std::chrono::steady_clock;
+    using time_point_t  = std::chrono::time_point<time_source_t>;
+    using duration_ns_t = std::chrono::nanoseconds;
+    using duration_us_t = std::chrono::microseconds;
+    using duration_ms_t = std::chrono::milliseconds;
 
     enum class cmd_t : uint32_t {
         STREAM_CMD_NONE             =   0,
@@ -115,45 +115,24 @@ namespace stream {
                 return ret_val;
             }
 
-            static bool ExpirationTimeGet ( const hid::types::storage_t& storage, time_point_t& tp_expiration )  {
+            static bool ExpirationTimeGet ( const hid::types::storage_t& storage, duration_ms_t& expiration_ms )  {
 
                 bool ret_val = false;
 
-                if ( Valid(storage) ) {
+                bool expiration_defined = false;
+                bool expiration_valid   = false;
 
-                    time_point_t tp_now = time_source_t::now ();
+                expiration_ms = duration_ms_t(0);
 
-                    bool expiration_defined = false;
-                    bool expiration_valid   = false;
-
-                    expiration_valid = ExpirationTimeValid ( storage, expiration_defined );
-
-                    if ( expiration_valid && expiration_defined ) {
-                        const uint32_t* const ptr = reinterpret_cast<const uint32_t*> (storage.data ());
-                        const time_duration_ms_t  tp_shift ( ptr [OFFSET_EXP] );
-                        tp_expiration = tp_now + tp_shift;
-                        ret_val = true;
-                    }
+                expiration_valid = ExpirationTimeValid ( storage, expiration_defined );
+                if ( expiration_valid && expiration_defined ) {
+                    const uint32_t* const ptr = reinterpret_cast<const uint32_t*> (storage.data ());
+                    uint32_t duration_ms = ptr [OFFSET_EXP];
+                    expiration_ms = duration_ms_t( duration_ms );
+                    ret_val = true;
                 }
 
                 return ret_val;
-
-            }
-
-            static void WaitTimeGet ( time_point_t& tp_expiration, struct timeval& wait_time, bool& is_expired ) {
-                
-                time_point_t tp_now = time_source_t::now();
-
-                if ( tp_now >= tp_expiration ) {
-                    is_expired = true;
-                } else {
-                    is_expired = false;
-                    auto duration = (tp_expiration - tp_now);
-                    time_duration_us_t duration_us = std::chrono::duration_cast<std::chrono::microseconds> (duration);
-
-                    wait_time.tv_sec  = static_cast<int> (duration_us.count()  / 1000000);
-                    wait_time.tv_usec = static_cast<int> (duration_us.count () % 1000000);
-                }
 
             }
 
@@ -186,6 +165,7 @@ namespace stream {
             }
 
         private:
+
             static uint32_t TsGet ( const hid::types::storage_t& storage ) {
                 const uint32_t* ptr = reinterpret_cast<const uint32_t*> (storage.data ());
                 return ptr[ OFFSET_EXP ];

@@ -26,7 +26,7 @@ uint32_t         SOCK_TEXT_TX_DELAY     = 0;
 
 static void dummy_ev_handler ( 
     IN    MANDATORY const hid::types::storage_t& in_data, 
-    OUT   MANDATORY hid::types::storage_t&  out_data, 
+    OUT   MANDATORY hid::types::storage_t& out_data, 
     OUT   MANDATORY uint32_t&           error_code 
 ) {
     UNUSED ( in_data );
@@ -37,7 +37,7 @@ static void dummy_ev_handler (
 //---------------------------------------------------------------------------//
 
 static bool get_timeval ( 
-    IN    MANDATORY sock_checkpoint_t   end_time, 
+    IN    MANDATORY checkpoint_t        end_time,
     OUT   MANDATORY struct timeval&     tv 
 ) {
 
@@ -46,7 +46,7 @@ static bool get_timeval (
     tv.tv_sec  = 0;
     tv.tv_usec = 0;
 
-    sock_checkpoint_t curr_time = sock_time_src_t::now ();
+    checkpoint_t curr_time = hid::socket::time_source_t::now ();
 
     if ( curr_time < end_time ) {
 
@@ -66,10 +66,10 @@ static bool get_timeval (
 
 static std::string tp_to_string ( 
     IN    OPTIONAL const char* const    prefix, 
-    IN    MANDATORY const sock_checkpoint_t& time 
+    IN    MANDATORY const checkpoint_t& time
 ) {
 
-    std::time_t  tt   = sock_time_src_t::to_time_t (time);
+    std::time_t  tt   = hid::socket::time_source_t::to_time_t (time);
     std::tm      tm   = *std::gmtime(&tt);
     std::stringstream ss;
 
@@ -83,8 +83,8 @@ static std::string tp_to_string (
 
 static std::string dur_to_string ( 
     IN    OPTIONAL const char* const    prefix, 
-    IN    MANDATORY const sock_checkpoint_t& start, 
-    IN    MANDATORY const sock_checkpoint_t& end 
+    IN    MANDATORY const checkpoint_t& start,
+    IN    MANDATORY const checkpoint_t& end
 ) {
 
     std::string ret_val;
@@ -205,7 +205,7 @@ static void socket_listen (
 static void socket_wait ( 
     INOUT MANDATORY sock_state_t&       sock_state, 
     IN    MANDATORY os_sock_t           sock, 
-    IN    MANDATORY sock_duration_ms_t  timeout_ns 
+    IN    MANDATORY duration_ms_t       timeout_ns
 ) {
 
     if ( sock_state == sock_state_t::SOCK_OK ) {
@@ -390,7 +390,7 @@ static void frame_tx (
 static void frame_rx ( 
     INOUT MANDATORY sock_state_t&       sock_state, 
     IN    MANDATORY os_sock_t           sock, 
-    IN    MANDATORY sock_duration_ms_t  delay, 
+    IN    MANDATORY duration_ms_t       delay,
     OUT   MANDATORY hid::types::storage_t& inp_frame 
 ) {
 
@@ -398,7 +398,7 @@ static void frame_rx (
 
         if ( inp_frame.size () > 0 ) {
 
-            sock_checkpoint_t end_time = sock_time_src_t::now() + delay;
+            checkpoint_t end_time = hid::socket::time_source_t::now() + delay;
 
             char*   rx_pos    = nullptr;
             int     rx_part   = 0;
@@ -470,18 +470,18 @@ static void frame_rx (
 static void frame_rx ( 
     INOUT MANDATORY sock_state_t&       sock_state, 
     IN    MANDATORY os_sock_t           sock, 
-    IN    MANDATORY sock_checkpoint_t   exptiration_time, 
+    IN    MANDATORY checkpoint_t        exptiration_time,
     OUT   MANDATORY hid::types::storage_t& inp_frame 
 ) {
 
     if ( sock_state == sock_state_t::SOCK_OK ) {
 
-        sock_checkpoint_t curr_time = sock_time_src_t::now ();
+        checkpoint_t curr_time = hid::socket::time_source_t::now ();
 
         if ( curr_time >= exptiration_time ) {
             sock_state = sock_state_t::SOCK_ERR_TIMEOUT;
         } else {
-            sock_duration_ms_t ms = std::chrono::duration_cast<std::chrono::milliseconds>(exptiration_time - curr_time);
+            duration_ms_t ms = std::chrono::duration_cast<std::chrono::milliseconds>(exptiration_time - curr_time);
             frame_rx ( sock_state, sock, ms, inp_frame );
         }
     }
@@ -493,15 +493,15 @@ sock_transaction_t::sock_transaction_t () {
     inp_cmd = 0;
 }
 
-void sock_transaction_t::start ( sock_duration_ms_t expiration_ms ) {
+void sock_transaction_t::start ( duration_ms_t expiration_default_ms ) {
 
-    tv_start = sock_time_src_t::now ();
-    tv_expiration = tv_start + expiration_ms;
+    tv_start = hid::socket::time_source_t::now ();
+    tv_expiration = tv_start + expiration_default_ms;
 }
 
 void sock_transaction_t::checkpoint_set ( sock_checkpoint_type_t point_type ) {
 
-    sock_checkpoint_t ref = sock_time_src_t::now();
+    checkpoint_t ref = hid::socket::time_source_t::now();
 
     switch ( point_type ) {
         case sock_checkpoint_type_t::CHECKPOINT_START:
@@ -528,9 +528,16 @@ void sock_transaction_t::checkpoint_set ( sock_checkpoint_type_t point_type ) {
     }
 }
 
+void sock_transaction_t::expiration_set ( duration_ms_t expiration_ms ) {
+
+    hid::socket::checkpoint_t   expiration_tp;
+    expiration_tp = tv_start + expiration_ms;
+    tv_expiration = expiration_tp;
+}
+
 void sock_transaction_t::reset ( void ) {
 
-    sock_checkpoint_t zero_val = {};
+    checkpoint_t zero_val = {};
 
     inp_hdr.clear ();
     inp_pay.clear ();
@@ -721,12 +728,22 @@ void SocketServer::ShellReadPrefix ( os_sock_t socket, sock_state_t& state, sock
             frame_rx ( state, socket, tr.tv_expiration, tr.inp_hdr );
             if ( state == sock_state_t::SOCK_OK ) {
                 if ( hid::stream::Prefix::Valid(tr.inp_hdr) ) {
+
+                    bool expiration_set;
                     hid::stream::params_t params;
+
+                    hid::stream::Prefix::ExpirationTimeValid ( tr.inp_hdr, expiration_set );
+                    if ( expiration_set ) {
+                        hid::stream::duration_ms_t  duration_ms;
+                        hid::stream::Prefix::ExpirationTimeGet ( tr.inp_hdr, duration_ms );
+                        tr.expiration_set( duration_ms );
+                    }
+
                     hid::stream::Prefix::GetParams ( tr.inp_hdr, params );
                     tr.inp_pay.resize ( params.len );
                     tr.inp_cmd = static_cast<int> (params.command);
+
                     tr.checkpoint_set ( sock_checkpoint_type_t::CHECKPOINT_RX_HDR );
-                    state = sock_state_t::SOCK_OK;
                 } else {
                     TTRACE ( "Server: Wrong prefix received. \n" );
                     state = sock_state_t::SOCK_ERR_SYNC;
@@ -825,14 +842,14 @@ void SocketServer::LogTransaction ( const sock_transaction_t& tr, const sock_sta
 
     std::string log_msg;
 
-    log_msg += tp_to_string  ( "Server:  ", tr.tv_start );
-    log_msg += dur_to_string ( "rcv HDR: ", tr.tv_start, tr.tv_rcv_hdr );
-    log_msg += dur_to_string ( "rcv PAY: ", tr.tv_start, tr.tv_rcv_pay );
-    log_msg += dur_to_string ( "Exec:    ", tr.tv_start, tr.tv_exec );
-    log_msg += dur_to_string ( "snt HDR: ", tr.tv_start, tr.tv_snt_hdr );
-    log_msg += dur_to_string ( "snt PAY: ", tr.tv_start, tr.tv_snt_pay );
-    log_msg += dur_to_string ( "Exp:     ", tr.tv_start, tr.tv_expiration );
-    log_msg += "Status:  ";
+    log_msg += tp_to_string  ( "Shell start:   ", tr.tv_start );
+    log_msg += dur_to_string ( "Shell rcv HDR: ", tr.tv_start, tr.tv_rcv_hdr );
+    log_msg += dur_to_string ( "Shell rcv PAY: ", tr.tv_start, tr.tv_rcv_pay );
+    log_msg += dur_to_string ( "Shell exec:    ", tr.tv_start, tr.tv_exec );
+    log_msg += dur_to_string ( "Shell snt HDR: ", tr.tv_start, tr.tv_snt_hdr );
+    log_msg += dur_to_string ( "Shell snt PAY: ", tr.tv_start, tr.tv_snt_pay );
+    log_msg += dur_to_string ( "Shell Exp:     ", tr.tv_start, tr.tv_expiration );
+    log_msg += "Shell code =   ";
     log_msg += std::to_string ( static_cast<uint32_t>(conn_state) );
     log_msg += "\n";
     log_msg += "\n";
@@ -1091,7 +1108,7 @@ void SocketClient::LogTransaction ( const sock_transaction_t& tr, const sock_sta
         log_msg += "\r\n";
         log_msg += "\r\n";
 
-        #if 0
+        #if 1
             std::cout << log_msg;
         #else
             if ( conn_state == sock_state_t::SOCK_OK ) {
@@ -1117,8 +1134,6 @@ bool SocketClient::Transaction ( std::chrono::milliseconds delay_ms, const hid::
         tr.start    ( delay_ms );
         SendPrefix  ( state, delay_ms, tr, out_fame );
         SendPayload ( state, tr, out_fame );
-        RecvHeader  ( state, tr );
-        RecvPayload ( state, tr, tr.inp_pay );
 
         if ( state != sock_state_t::SOCK_OK ) {
 
@@ -1129,13 +1144,14 @@ bool SocketClient::Transaction ( std::chrono::milliseconds delay_ms, const hid::
 
             SendPrefix  ( state, delay_ms, tr, out_fame );
             SendPayload ( state, tr, out_fame );
-            RecvHeader  ( state, tr );
-            RecvPayload ( state, tr, tr.inp_pay );
         }
 
         if ( state ==  sock_state_t::SOCK_OK ) {
             in_frame = std::move(tr.inp_pay);
         }
+
+        RecvHeader  ( state, tr );
+        RecvPayload ( state, tr, tr.inp_pay );
 
         LogTransaction (tr, state);
 
@@ -1150,6 +1166,10 @@ bool SocketClient::Transaction ( std::chrono::milliseconds delay_ms, const hid::
     }
 
     return  ( state == sock_state_t::SOCK_OK );
+}
+
+bool SocketClient::Transaction ( const hid::types::storage_t& out_fame, hid::types::storage_t& in_frame ) {
+    return Transaction ( hid::socket::SOCK_COMM_TIMEOUT, out_fame, in_frame );
 }
 
 }
