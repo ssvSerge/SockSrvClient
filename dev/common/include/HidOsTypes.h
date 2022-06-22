@@ -54,6 +54,7 @@ void sock_unlink ( const char* const fname );
 void os_sockclose ( os_sock_t& sock );
 void os_sock_nodelay ( os_sock_t& sock );
 bool sock_valid ( os_sock_t& sock );
+os_sock_t os_socket ( int mode, int type, int proto );
 
 
 #endif

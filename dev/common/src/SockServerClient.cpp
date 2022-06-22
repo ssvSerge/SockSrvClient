@@ -2,6 +2,7 @@
 #include <iostream>
 #include <iomanip>
 #include <sstream>
+#include <atomic>
 
 #include <SockServerClient.h>
 #include <StreamPrefix.h>
@@ -24,7 +25,11 @@ uint32_t         SOCK_TEXT_TX_DELAY     = 0;
 
 //---------------------------------------------------------------------------//
 
-static void dummy_ev_handler ( 
+std::atomic<int> g_sockets_cnt(0);
+
+//---------------------------------------------------------------------------//
+
+static void dummy_ev_handler (
     IN    MANDATORY const hid::types::storage_t& in_data, 
     OUT   MANDATORY hid::types::storage_t& out_data, 
     OUT   MANDATORY uint32_t&           error_code 
@@ -129,10 +134,21 @@ static void socket_open (
 
         sock = ::socket ( af_mode, SOCK_STREAM, 0 );
         if ( sock_valid (sock) ) {
+            g_sockets_cnt++;
             os_sock_nodelay ( sock );
             sock_state = sock_state_t::SOCK_OK;
         }
 
+    }
+}
+
+static void socket_close ( 
+    INOUT MANDATORY os_sock_t& sock
+) {
+
+    if ( sock != static_cast<os_sock_t> (SOCK_INVALID_SOCK) ) {
+        g_sockets_cnt--;
+        os_sockclose( sock );
     }
 }
 
@@ -259,9 +275,10 @@ static void socket_accept (
 
         sock_state = sock_state_t::SOCK_ERR_ACCEPT;
 
-        client_sock = accept ( server_sock, NULL, NULL );
+        client_sock = ::accept ( server_sock, NULL, NULL );
 
         if ( sock_valid(client_sock) ) {
+            g_sockets_cnt++;
             sock_state = sock_state_t::SOCK_OK;
         }
     }
@@ -628,9 +645,19 @@ void SocketServer::Service () {
             socket_listen ( init_res, server_socket );
 
             if ( init_res != sock_state_t::SOCK_OK ) {
-                TTRACE ( "Server: Failed to open server socket. \n" );
+            	std::string err_msg;
+            	err_msg  = "Failed to start. ";
+                if ( m_conn_type == conn_type_t::CONN_TYPE_FILE ) {
+                    err_msg += " On file: "; 
+                } else {
+                    err_msg += " On socket: ";
+                }
+                err_msg += m_port;
+                err_msg += "\r\n";
+
+                TTRACE ( "Server: %s", err_msg.c_str() );
                 err_cnt_start++;
-                os_sockclose (server_socket);
+                socket_close (server_socket);
                 std::this_thread::sleep_for ( 1s );
                 continue;
             }
@@ -665,7 +692,7 @@ void SocketServer::Service () {
 
     }
 
-    os_sockclose ( server_socket );
+    socket_close ( server_socket );
 
     if ( m_conn_type == conn_type_t::CONN_TYPE_FILE ) {
         sock_unlink ( m_port.c_str() );
@@ -989,7 +1016,7 @@ bool SocketServer::Shell ( os_sock_t socket ) {
 
     }
 
-    os_sockclose ( socket );
+    socket_close ( socket );
     TTRACE ("Server: Client shell closed. \n");
     return true;
 
@@ -1007,7 +1034,7 @@ SocketClient::SocketClient () {
 SocketClient::~SocketClient () {
 
     if ( sock_valid (m_sock) ) {
-        os_sockclose (m_sock);
+        socket_close (m_sock);
         m_sock = static_cast<os_sock_t> (SOCK_INVALID_SOCK);
     }
 
@@ -1030,12 +1057,12 @@ bool SocketClient::Connect ( const char* const portStr, conn_type_t type ) {
 void SocketClient::Close () {
 
     TTRACE ( "Client: Close connection. \n" );
-    os_sockclose( m_sock );
+    socket_close ( m_sock );
 }
 
 void SocketClient::connect ( sock_state_t& state ) {
 
-    os_sockclose   ( m_sock );
+    socket_close   ( m_sock );
     socket_open    ( state, m_conn_type, m_sock );
     socket_connect ( state, m_sock, m_conn_type, m_port );
     socket_nodelay ( state, m_sock );
@@ -1248,7 +1275,7 @@ bool SocketClient::Transaction ( std::chrono::milliseconds delay_ms, const hid::
             in_code  = tr.out_code;
         } else {
             TTRACE ( "Client: Close connection; Attempt to re-start. \n" );
-            os_sockclose ( m_sock );
+            socket_close ( m_sock );
         }
 
         if ( state == sock_state_t::SOCK_OK ) {

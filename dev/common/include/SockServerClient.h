@@ -20,7 +20,7 @@ namespace socket {
     using duration_ms_t = std::chrono::milliseconds;
     using checkpoint_t  = std::chrono::time_point<time_source_t>;
 
-    constexpr auto SOCK_COMM_TIMEOUT = std::chrono::milliseconds ( 45 * 1000 );
+    constexpr auto SOCK_COMM_TIMEOUT = std::chrono::milliseconds ( 5 * 1000 );
 
     enum class sock_checkpoint_type_t {
         CHECKPOINT_UNKNOWN      =  0,
