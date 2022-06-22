@@ -1,5 +1,8 @@
 ﻿#include <iostream>
 #include <chrono>
+#include <cstdlib>
+#include <ctime>
+#include <cassert>
 
 #include <SockServerClient.h>
 #include <StreamPrefix.h>
@@ -10,24 +13,43 @@ namespace hid {
 namespace socket {
 
 extern uint32_t SOCK_TEXT_TX_DELAY;
+extern std::atomic<int> g_sockets_cnt;
 
 }
 }
+
+auto handler_delay = 500ms;
+
+hid::types::storage_t out_data_local;
+static uint32_t cmd_id_local = 340;
 
 void cmd_handler ( const hid::types::storage_t& in_data, hid::types::storage_t& out_data, uint32_t& error_code ) {
 
     UNUSED ( in_data );
-    UNUSED ( out_data );
-    UNUSED ( error_code );
 
-    std::this_thread::sleep_for ( 6000ms );
+    std::this_thread::sleep_for ( handler_delay );
+
+    size_t new_size = 100;
+    new_size += static_cast<int> (std::rand () % 200);
+
+    out_data_local.resize( new_size );
+
+    for ( size_t i=0; i< new_size; i++ ) {
+        out_data_local[i] = 'a' + (std::rand () % 20);
+    }
+
+    cmd_id_local++;
+    error_code = cmd_id_local;
+    out_data = out_data_local;
 }
 
 
-static void test_sock_01 () {
+static void test_timeout_01 () {
 
     const char* const           port = "4400";
     hid::socket::conn_type_t    conn_type = hid::socket::conn_type_t::CONN_TYPE_SOCK;
+    uint32_t ret_code;
+    bool     ret_val;
 
     hid::socket::sock_transaction_t tr;
     hid::socket::SocketServer srv;
@@ -37,26 +59,31 @@ static void test_sock_01 () {
     ::hid::types::storage_t inp_frame;
 
     srv.Start ( port, conn_type );
+    srv.SetHandler ( cmd_handler );
     cli.Connect ( port, conn_type );
 
-    for ( int i = 0; i < 30; i++ ) {
+    handler_delay = 300ms;
+    for ( int i = 1; i < 20; i++ ) {
 
-        if ( i == 10 ) {
-            srv.Stop ();
+        inp_frame.resize(512);
+        ret_code = 400;
+
+        ret_val = cli.Transaction ( std::chrono::milliseconds ( i * 100ms ), out_fame, inp_frame, ret_code );
+        std::cout << "cli.Transaction (" << i << ") Res: " << ret_val << "; Code: " << ret_code << std::endl;
+        if ( ret_val ) {
+            assert ( inp_frame == out_data_local );
+            assert ( ret_code == cmd_id_local );
+        } else {
+            assert ( inp_frame.size() == 0 );
+            assert ( ret_code == 0 );
         }
-
-        if ( i == 20 ) {
-            srv.Start ( port, conn_type );
-        }
-
-        cli.Transaction ( std::chrono::milliseconds ( 90 * 1000 ), out_fame, inp_frame );
     }
 
     cli.Close ();
     srv.Stop ();
 }
 
-static void test_file_02 () {
+static void test_restarts_02 () {
 
     const char* const           port = "4401.sock";
     hid::socket::conn_type_t    conn_type = hid::socket::conn_type_t::CONN_TYPE_FILE;
@@ -68,60 +95,81 @@ static void test_file_02 () {
     ::hid::types::storage_t out_fame;
     ::hid::types::storage_t inp_frame;
 
+    uint32_t ret_code;
+    bool     ret_val;
+
     srv.Start ( port, conn_type );
     cli.Connect ( port, conn_type );
 
-    for ( int i = 0; i < 30; i++ ) {
+    handler_delay = 10ms;
 
-        if ( i == 10 ) {
+    for ( int i = 0; i < 15; i++ ) {
+
+        if ( i == 5 ) {
             srv.Stop ();
         }
 
-        if ( i == 20 ) {
+        if ( i == 10 ) {
             srv.Start ( port, conn_type );
         }
 
-        cli.Transaction ( std::chrono::milliseconds ( 0 ), out_fame, inp_frame );
+        ret_val = cli.Transaction ( out_fame, inp_frame, ret_code );
+        std::cout << "Transaction (" << i << ") " << std::endl;
+
     }
 
     cli.Close ();
     srv.Stop ();
 }
 
-static void test_sock_03 () {
+static void test_tx_delay_03 () {
 
-    const char* const           port = "4403";
-    hid::socket::conn_type_t    conn_type = hid::socket::conn_type_t::CONN_TYPE_SOCK;
+    const char* const           port = "4401.sock";
+    hid::socket::conn_type_t    conn_type = hid::socket::conn_type_t::CONN_TYPE_FILE;
 
     hid::socket::sock_transaction_t tr;
     hid::socket::SocketServer srv;
     hid::socket::SocketClient cli;
 
-    hid::types::storage_t out_fame;
-    hid::types::storage_t inp_frame;
-    bool ret_val;
+    ::hid::types::storage_t out_fame;
+    ::hid::types::storage_t inp_frame;
 
-
-    hid::socket::SOCK_TEXT_TX_DELAY = 0;
+    uint32_t ret_code;
+    bool     ret_val;
 
     srv.Start ( port, conn_type );
-    srv.SetHandler ( cmd_handler );
     cli.Connect ( port, conn_type );
-    out_fame.resize (50);
-    
-    ret_val = cli.Transaction ( std::chrono::milliseconds ( 5 * 1000 ), out_fame, inp_frame );
-    std::cout << "transaction status: " << ret_val << std::endl;
+
+    srv.SetHandler ( cmd_handler );
+    handler_delay = 10ms;
+
+    hid::socket::SOCK_TEXT_TX_DELAY = 1;
+    for( int i = 0; i < 15; i++ ) {
+
+        ret_val = cli.Transaction ( 5s, out_fame, inp_frame, ret_code );
+        if( ret_val ) {
+            assert ( inp_frame == out_data_local );
+            assert ( ret_code == cmd_id_local );
+        } else {
+            assert ( inp_frame.size () == 0 );
+            assert ( ret_code == 0 );
+        }
+        std::cout << "Transaction (" << i << ") " << std::endl;
+    }
 
     cli.Close ();
     srv.Stop ();
 }
 
-
 int main () {
 
-    test_sock_01 ();
-    // test_file_02 ();
-    test_sock_03 ();
+    time_t dummy = std::time ( nullptr );
+    std::srand ( static_cast<int>(dummy) );
 
+    test_timeout_01  ();
+    test_restarts_02 ();
+    test_tx_delay_03 ();
+
+    std::cout << "Done" << std::endl;
     return 0;
 }

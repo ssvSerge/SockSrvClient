@@ -2,6 +2,7 @@
 #include <iostream>
 #include <iomanip>
 #include <sstream>
+#include <atomic>
 
 #include <SockServerClient.h>
 #include <StreamPrefix.h>
@@ -24,7 +25,11 @@ uint32_t         SOCK_TEXT_TX_DELAY     = 0;
 
 //---------------------------------------------------------------------------//
 
-static void dummy_ev_handler ( 
+std::atomic<int> g_sockets_cnt(0);
+
+//---------------------------------------------------------------------------//
+
+static void dummy_ev_handler (
     IN    MANDATORY const hid::types::storage_t& in_data, 
     OUT   MANDATORY hid::types::storage_t& out_data, 
     OUT   MANDATORY uint32_t&           error_code 
@@ -65,7 +70,6 @@ static bool get_timeval (
 }
 
 static std::string tp_to_string ( 
-    IN    OPTIONAL const char* const    prefix, 
     IN    MANDATORY const checkpoint_t& time
 ) {
 
@@ -73,16 +77,11 @@ static std::string tp_to_string (
     std::tm      tm   = *std::gmtime(&tt);
     std::stringstream ss;
 
-    if ( prefix != nullptr ) {
-        ss << prefix;
-    }
-
-    ss << std::put_time( &tm, "UTC: %Y-%m-%d %H:%M:%S \n" );
+    ss << std::put_time( &tm, "UTC: %Y-%m-%d %H:%M:%S" );
     return ss.str();
 }
 
 static std::string dur_to_string ( 
-    IN    OPTIONAL const char* const    prefix, 
     IN    MANDATORY const checkpoint_t& start,
     IN    MANDATORY const checkpoint_t& end
 ) {
@@ -91,19 +90,23 @@ static std::string dur_to_string (
 
     uint64_t seconds_cnt = std::chrono::duration_cast<std::chrono::seconds>(end.time_since_epoch()).count();
     if ( seconds_cnt > 0 ) {
-        if ( end > start ) {
-            auto diff = (end - start);
-            auto diff_ms = std::chrono::duration_cast<std::chrono::milliseconds>(diff);
 
-            if ( prefix != nullptr ) {
-                ret_val = prefix;
-            }
+        std::string prefix = "+";
+        auto diff = (end - start);
 
-            ret_val += "(+";
-            ret_val += std::to_string ( diff_ms.count() );
-            ret_val += "ms) \n";
-
+        if ( end < start ) {
+            diff = (start - end);
+            prefix = "-";
         }
+
+        duration_ms_t diff_ms;
+        diff_ms = std::chrono::duration_cast<std::chrono::milliseconds>(diff);
+
+        ret_val += "(";
+        ret_val += prefix;
+        ret_val += std::to_string ( diff_ms.count() );
+        ret_val += "ms)";
+
     }
 
     return ret_val;
@@ -131,10 +134,21 @@ static void socket_open (
 
         sock = ::socket ( af_mode, SOCK_STREAM, 0 );
         if ( sock_valid (sock) ) {
+            g_sockets_cnt++;
             os_sock_nodelay ( sock );
             sock_state = sock_state_t::SOCK_OK;
         }
 
+    }
+}
+
+static void socket_close ( 
+    INOUT MANDATORY os_sock_t& sock
+) {
+
+    if ( sock != static_cast<os_sock_t> (SOCK_INVALID_SOCK) ) {
+        g_sockets_cnt--;
+        os_sockclose( sock );
     }
 }
 
@@ -143,7 +157,7 @@ static void socket_nodelay (
     INOUT MANDATORY os_sock_t&          sock 
 ) {
     if ( sock_state == sock_state_t::SOCK_OK ) {
-        os_sockclose (sock);
+        os_sock_nodelay ( sock );
     }
 }
 
@@ -261,9 +275,10 @@ static void socket_accept (
 
         sock_state = sock_state_t::SOCK_ERR_ACCEPT;
 
-        client_sock = accept ( server_sock, NULL, NULL );
+        client_sock = ::accept ( server_sock, NULL, NULL );
 
         if ( sock_valid(client_sock) ) {
+            g_sockets_cnt++;
             sock_state = sock_state_t::SOCK_OK;
         }
     }
@@ -500,12 +515,26 @@ static void frame_rx (
 //---------------------------------------------------------------------------//
 
 sock_transaction_t::sock_transaction_t () {
-    inp_cmd = 0;
+    inp_cmd  = 0;
+    inp_code = 0;
+    out_cmd  = 0;
+    out_code = 0;
 }
 
 void sock_transaction_t::start ( duration_ms_t expiration_default_ms ) {
 
-    tv_start = hid::socket::time_source_t::now ();
+    inp_hdr.clear ();
+    inp_pay.clear ();
+    out_hdr.clear ();
+    out_pay.clear ();
+
+    tv_rcv_hdr  = checkpoint_t ( duration_ms_t ( 0 ) );
+    tv_rcv_pay  = checkpoint_t ( duration_ms_t ( 0 ) );
+    tv_exec     = checkpoint_t ( duration_ms_t ( 0 ) );
+    tv_snt_hdr  = checkpoint_t ( duration_ms_t ( 0 ) );
+    tv_snt_pay  = checkpoint_t ( duration_ms_t ( 0 ) );
+
+    tv_start    = hid::socket::time_source_t::now ();
     tv_expiration = tv_start + expiration_default_ms;
 }
 
@@ -616,9 +645,19 @@ void SocketServer::Service () {
             socket_listen ( init_res, server_socket );
 
             if ( init_res != sock_state_t::SOCK_OK ) {
-                TTRACE ( "Server: Failed to open server socket. \n" );
+            	std::string err_msg;
+            	err_msg  = "Failed to start. ";
+                if ( m_conn_type == conn_type_t::CONN_TYPE_FILE ) {
+                    err_msg += " On file: "; 
+                } else {
+                    err_msg += " On socket: ";
+                }
+                err_msg += m_port;
+                err_msg += "\r\n";
+
+                TTRACE ( "Server: %s", err_msg.c_str() );
                 err_cnt_start++;
-                os_sockclose (server_socket);
+                socket_close (server_socket);
                 std::this_thread::sleep_for ( 1s );
                 continue;
             }
@@ -653,7 +692,7 @@ void SocketServer::Service () {
 
     }
 
-    os_sockclose ( server_socket );
+    socket_close ( server_socket );
 
     if ( m_conn_type == conn_type_t::CONN_TYPE_FILE ) {
         sock_unlink ( m_port.c_str() );
@@ -673,6 +712,8 @@ bool SocketServer::Start ( const char* const port, conn_type_t conn_type ) {
 
     bool ret_val = false;
 
+    TTRACE ( "Server: Start requested. \n" );
+
     m_controller.lock ();
 
         try {
@@ -689,6 +730,11 @@ bool SocketServer::Start ( const char* const port, conn_type_t conn_type ) {
                 while ( ! m_instance_active ) {
                     std::this_thread::sleep_for ( std::chrono::milliseconds (100) );
                 }
+
+                ret_val = true;
+
+            } else {
+                TTRACE ( "Server: Already running. \n" );
             }
             
         } catch ( ... ) {
@@ -701,6 +747,8 @@ bool SocketServer::Start ( const char* const port, conn_type_t conn_type ) {
 }
 
 void SocketServer::Stop ( void ) {
+
+    TTRACE ( "Server: Stop requested. \n" );
 
     m_stop = true;
 
@@ -850,26 +898,55 @@ void SocketServer::ShellSendPayload ( os_sock_t socket, sock_state_t& state, soc
 
 void SocketServer::LogTransaction ( const sock_transaction_t& tr, const sock_state_t conn_state ) {
 
-    std::string log_msg;
+    try {
 
-    log_msg += tp_to_string  ( "Shell start:   ", tr.tv_start );
-    log_msg += dur_to_string ( "Shell rcv HDR: ", tr.tv_start, tr.tv_rcv_hdr );
-    log_msg += dur_to_string ( "Shell rcv PAY: ", tr.tv_start, tr.tv_rcv_pay );
-    log_msg += dur_to_string ( "Shell exec:    ", tr.tv_start, tr.tv_exec );
-    log_msg += dur_to_string ( "Shell snt HDR: ", tr.tv_start, tr.tv_snt_hdr );
-    log_msg += dur_to_string ( "Shell snt PAY: ", tr.tv_start, tr.tv_snt_pay );
-    log_msg += dur_to_string ( "Shell Exp:     ", tr.tv_start, tr.tv_expiration );
-    log_msg += "Shell code =   ";
-    log_msg += std::to_string ( static_cast<uint32_t>(conn_state) );
-    log_msg += "\n";
-    log_msg += "\n";
+        std::string log_msg;
+        checkpoint_t max_time;
 
-    #if 0
-        std::cout << log_msg;
-    #else
-        printf ("Server: Transaction done. \n");
-        fflush (stdout);
-    #endif
+        log_msg += "Server: Transaction ";
+        log_msg += tp_to_string  ( tr.tv_start );
+        if ( max_time < tr.tv_start ) {
+            max_time = tr.tv_start;
+        }
+
+        log_msg += "; RCV HDR: ";
+        log_msg += dur_to_string ( tr.tv_start, tr.tv_rcv_hdr );
+        if ( max_time < tr.tv_rcv_hdr ) {
+            max_time = tr.tv_rcv_hdr;
+        }
+
+        log_msg += "; RCV PAY: ";
+        log_msg += dur_to_string ( tr.tv_start, tr.tv_rcv_pay );
+        if ( max_time < tr.tv_rcv_pay ) {
+            max_time = tr.tv_rcv_pay;
+        }
+
+        log_msg += "; SNT HDR: ";
+        log_msg += dur_to_string ( tr.tv_start, tr.tv_snt_hdr );
+        if ( max_time < tr.tv_snt_hdr ) {
+            max_time = tr.tv_snt_hdr;
+        }
+
+        log_msg += "; SNT PAY: ";
+        log_msg += dur_to_string ( tr.tv_start, tr.tv_snt_pay );
+        if ( max_time < tr.tv_snt_pay ) {
+            max_time = tr.tv_snt_pay;
+        }
+
+        log_msg += "; Exp: ";
+        log_msg += dur_to_string ( max_time, tr.tv_expiration );
+
+        log_msg += "; Status: ";
+        log_msg += std::to_string ( static_cast<uint32_t>(conn_state) );
+
+        log_msg += "\r\n";
+
+        #if 0
+            std::cout << log_msg;
+        #endif
+
+    } catch ( ... ) {
+    }
 }
 
 void SocketServer::ShellClose ( os_sock_t socket, const sock_state_t& state ) {
@@ -939,7 +1016,7 @@ bool SocketServer::Shell ( os_sock_t socket ) {
 
     }
 
-    os_sockclose ( socket );
+    socket_close ( socket );
     TTRACE ("Server: Client shell closed. \n");
     return true;
 
@@ -957,7 +1034,7 @@ SocketClient::SocketClient () {
 SocketClient::~SocketClient () {
 
     if ( sock_valid (m_sock) ) {
-        os_sockclose (m_sock);
+        socket_close (m_sock);
         m_sock = static_cast<os_sock_t> (SOCK_INVALID_SOCK);
     }
 
@@ -980,17 +1057,15 @@ bool SocketClient::Connect ( const char* const portStr, conn_type_t type ) {
 void SocketClient::Close () {
 
     TTRACE ( "Client: Close connection. \n" );
-
-    os_sockclose( m_sock );
-    std::this_thread::sleep_for ( std::chrono::seconds ( 1 ) );
+    socket_close ( m_sock );
 }
 
 void SocketClient::connect ( sock_state_t& state ) {
 
-    os_sockclose   ( m_sock );
+    socket_close   ( m_sock );
     socket_open    ( state, m_conn_type, m_sock );
-    socket_nodelay ( state, m_sock );
     socket_connect ( state, m_sock, m_conn_type, m_port );
+    socket_nodelay ( state, m_sock );
 
     if ( state == sock_state_t::SOCK_OK ) {
         TTRACE ( "Client: Connected to sever. \n" );
@@ -1001,7 +1076,7 @@ void SocketClient::connect ( sock_state_t& state ) {
     std::this_thread::sleep_for ( std::chrono::milliseconds (100) );
 }
 
-void SocketClient::SendPrefix ( sock_state_t& state, std::chrono::milliseconds delay_ms, sock_transaction_t& tr, const hid::types::storage_t& out_fame ) {
+void SocketClient::SendPrefix ( sock_state_t& state, std::chrono::milliseconds delay_ms, sock_transaction_t& tr, size_t out_fame_len ) {
 
     if ( state == sock_state_t::SOCK_OK ) {
         try {
@@ -1009,19 +1084,17 @@ void SocketClient::SendPrefix ( sock_state_t& state, std::chrono::milliseconds d
             hid::stream::params_t  params = {};
 
             params.command  =  hid::stream::cmd_t::STREAM_CMD_REQUEST;
-            params.len      =  static_cast<uint32_t> ( out_fame.size() );
+            params.len      =  static_cast<uint32_t> (out_fame_len);
             hid::stream::Prefix::SetParams ( params, tr.out_hdr );
             hid::stream::Prefix::SetTimeout ( delay_ms, tr.out_hdr );
 
             frame_tx ( state, m_sock, tr.out_hdr );
+            tr.checkpoint_set ( sock_checkpoint_type_t::CHECKPOINT_TX_HDR );
 
             if ( state != sock_state_t::SOCK_OK ) {
                 TTRACE ( "Client: Failed to Send Prefix. \n" );
             }
 
-            if ( state == sock_state_t::SOCK_OK ) {
-                tr.checkpoint_set (sock_checkpoint_type_t::CHECKPOINT_TX_HDR);
-            }
 
         }   catch( ... ) {
             TTRACE ( "Client: Exception in Send Prefix. \n" );
@@ -1036,14 +1109,12 @@ void SocketClient::SendPayload ( sock_state_t& state, sock_transaction_t& tr, co
         try {
 
             frame_tx ( state, m_sock, out_fame );
+            tr.checkpoint_set ( sock_checkpoint_type_t::CHECKPOINT_TX_PAYLOAD );
 
             if ( state != sock_state_t::SOCK_OK ) {
                 TTRACE ( "Client: Failed to Send Payload. \n" );
             }
 
-            if ( state == sock_state_t::SOCK_OK ) {
-                tr.checkpoint_set (sock_checkpoint_type_t::CHECKPOINT_TX_PAYLOAD);
-            }
 
         }   catch( ... ) {
             TTRACE ( "Client: Exception in Send Payload. \n" );
@@ -1060,14 +1131,16 @@ void SocketClient::RecvHeader ( sock_state_t& state, sock_transaction_t& tr ) {
             tr.inp_hdr.resize ( hid::stream::Prefix::PrefixSize() );
 
             frame_rx ( state, m_sock, tr.tv_expiration, tr.inp_hdr );
+            tr.checkpoint_set ( sock_checkpoint_type_t::CHECKPOINT_RX_HDR );
 
             if ( state == sock_state_t::SOCK_OK ) {
                 if ( hid::stream::Prefix::Valid(tr.inp_hdr) ) {
                     hid::stream::params_t params;
                     hid::stream::Prefix::GetParams ( tr.inp_hdr, params );
+                    tr.out_cmd  = static_cast<uint32_t> (params.command);
+                    tr.out_code = params.code;
                     tr.inp_pay.resize ( params.len );
                     tr.inp_cmd = static_cast<int> (params.command);
-                    tr.checkpoint_set ( sock_checkpoint_type_t::CHECKPOINT_RX_HDR );
                 } else {
                     TTRACE ( "Client: Wrong header received. \n" );
                     state = sock_state_t::SOCK_ERR_SYNC;
@@ -1090,10 +1163,12 @@ void SocketClient::RecvPayload ( sock_state_t& state, sock_transaction_t& tr, hi
         try {
 
             frame_rx ( state, m_sock, tr.tv_expiration, in_frame );
+            tr.checkpoint_set ( sock_checkpoint_type_t::CHECKPOINT_RX_PAYLOAD );
 
-            if ( state == sock_state_t::SOCK_OK ) {
-                tr.checkpoint_set ( sock_checkpoint_type_t::CHECKPOINT_RX_PAYLOAD );
+            if ( state != sock_state_t::SOCK_OK ) {
+                TTRACE ( "Client: Failed to receive payload. \n" );
             }
+
         }   catch( ... ) {
             TTRACE ( "Client: Exception in Recv Payload. \n" );
             state = sock_state_t::SOCK_ERR_GENERAL;
@@ -1106,81 +1181,116 @@ void SocketClient::LogTransaction ( const sock_transaction_t& tr, const sock_sta
 
     try {
 
-        std::string log_msg;
+        std::string  log_msg;
+        checkpoint_t max_time;
 
-        log_msg += tp_to_string  ( "Client:  ", tr.tv_start );
-        log_msg += dur_to_string ( "snt HDR: ", tr.tv_start, tr.tv_snt_hdr );
-        log_msg += dur_to_string ( "snt PAY: ", tr.tv_start, tr.tv_snt_pay );
-        log_msg += dur_to_string ( "rcv HDR: ", tr.tv_start, tr.tv_rcv_hdr );
-        log_msg += dur_to_string ( "rcv PAY: ", tr.tv_start, tr.tv_rcv_pay );
-        log_msg += dur_to_string ( "Exp:     ", tr.tv_start, tr.tv_expiration );
-        log_msg += "Status:  ";
+        log_msg += "Client: Transaction ";
+        log_msg += tp_to_string ( tr.tv_start );
+        max_time = tr.tv_start;
+
+        log_msg += "; SNT HDR: ";
+        log_msg += dur_to_string ( tr.tv_start, tr.tv_snt_hdr );
+        if ( max_time < tr.tv_snt_hdr ) {
+            max_time = tr.tv_snt_hdr;
+        }
+
+        log_msg += "; SNT PAY: ";
+        log_msg += dur_to_string ( tr.tv_start, tr.tv_snt_pay );
+        if ( max_time < tr.tv_snt_pay ) {
+            max_time = tr.tv_snt_pay;
+        }
+
+        log_msg += "; RCV HDR: ";
+        log_msg += dur_to_string ( tr.tv_start, tr.tv_rcv_hdr );
+        if ( max_time < tr.tv_rcv_hdr ) {
+            max_time = tr.tv_rcv_hdr;
+        }
+
+        log_msg += "; RCV PAY: ";
+        log_msg += dur_to_string ( tr.tv_start, tr.tv_rcv_pay );
+        if ( max_time < tr.tv_rcv_pay ) {
+            max_time = tr.tv_rcv_pay;
+        }
+
+        log_msg += "; Exp: ";
+        log_msg += dur_to_string ( max_time, tr.tv_expiration );
+
+        log_msg += "; Status: ";
         log_msg += std::to_string ( static_cast<uint32_t>(conn_state) );
-        log_msg += "\r\n";
+
         log_msg += "\r\n";
 
-        #if 1
+        #if 0
             std::cout << log_msg;
-        #else
-            if ( conn_state == sock_state_t::SOCK_OK ) {
-                printf ( "Client: Transaction done. \n" );
-                fflush ( stdout );
-            }
         #endif
 
     } catch( ... ) {
     }
 }
 
-bool SocketClient::Transaction ( std::chrono::milliseconds delay_ms, const hid::types::storage_t& out_fame, hid::types::storage_t& in_frame ) {
+bool SocketClient::TransactionInt ( sock_state_t& state, std::chrono::milliseconds delay_ms, sock_transaction_t& tr, const hid::types::storage_t& out_frame ) {
 
-    sock_state_t state = sock_state_t::SOCK_OK;
+    bool ret_val = false;
 
     try {
 
-        sock_transaction_t tr;
-
-        in_frame.clear();
-
-        tr.start    ( delay_ms );
-        SendPrefix  ( state, delay_ms, tr, out_fame );
-        SendPayload ( state, tr, out_fame );
-
-        if ( state != sock_state_t::SOCK_OK ) {
-
-            TTRACE ("Client: Attempt to reconnect to server. \n");
-
-            state = sock_state_t::SOCK_OK;
-            connect     ( state );
-
-            SendPrefix  ( state, delay_ms, tr, out_fame );
-            SendPayload ( state, tr, out_fame );
-        }
-
-        if ( state ==  sock_state_t::SOCK_OK ) {
-            in_frame = std::move(tr.inp_pay);
-        }
+        SendPrefix  ( state, delay_ms, tr, out_frame.size() );
+        SendPayload ( state, tr, out_frame );
 
         RecvHeader  ( state, tr );
         RecvPayload ( state, tr, tr.inp_pay );
 
-        LogTransaction (tr, state);
+        ret_val = true;
+    } catch ( ... ) {
+    }
+
+    return ret_val;
+}
+
+bool SocketClient::Transaction ( std::chrono::milliseconds delay_ms, const hid::types::storage_t& out_frame, hid::types::storage_t& in_frame, uint32_t& in_code ) {
+
+    bool ret_val = false;
+
+    try {
+
+        sock_transaction_t tr;
+        sock_state_t state = sock_state_t::SOCK_OK;
+
+        in_frame.clear ();
+        in_code = 0;
+
+        tr.start ( delay_ms );
+
+        TransactionInt ( state, delay_ms, tr, out_frame );
+        if ( (state == sock_state_t::SOCK_ERR_TX) || (state == sock_state_t::SOCK_ERR_RX) ) {
+            state = sock_state_t::SOCK_OK;
+            connect ( state );
+            TransactionInt ( state, delay_ms, tr, out_frame );
+        }
+
+        LogTransaction ( tr, state );
+
+        if ( state == sock_state_t::SOCK_OK ) {
+            in_frame = std::move ( tr.inp_pay );
+            in_code  = tr.out_code;
+        } else {
+            TTRACE ( "Client: Close connection; Attempt to re-start. \n" );
+            socket_close ( m_sock );
+        }
+
+        if ( state == sock_state_t::SOCK_OK ) {
+            ret_val = true;
+        }
 
     }   catch( ... ) {
         TTRACE ( "Client: Exception in Transaction. \n" );
-        state = sock_state_t::SOCK_ERR_GENERAL;
     }
 
-    if ( state != sock_state_t::SOCK_OK ) {
-        TTRACE ( "Client: Transaction failed. \n" );
-        os_sockclose ( m_sock );
-    }
-
-    return  ( state == sock_state_t::SOCK_OK );
+    return ret_val;
 }
 
-bool SocketClient::Transaction ( const hid::types::storage_t& out_fame, hid::types::storage_t& in_frame ) {
-    return Transaction ( hid::socket::SOCK_COMM_TIMEOUT, out_fame, in_frame );
+bool SocketClient::Transaction ( const hid::types::storage_t& out_fame, hid::types::storage_t& in_frame, uint32_t& in_code ) {
+    return Transaction ( hid::socket::SOCK_COMM_TIMEOUT, out_fame, in_frame, in_code );
 }
 
 }
