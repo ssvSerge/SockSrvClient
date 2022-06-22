@@ -73,6 +73,9 @@ namespace socket {
 
         public:
             int                     inp_cmd;
+            int                     inp_code;
+            int                     out_cmd;
+            int                     out_code;
             hid::types::storage_t   inp_hdr;
             hid::types::storage_t   inp_pay;
             hid::types::storage_t   out_hdr;
@@ -147,16 +150,17 @@ namespace socket {
         public:
             bool Connect ( const char* const port, conn_type_t conn_type );
             void Close ();
-            bool Transaction ( std::chrono::milliseconds delayMs, const hid::types::storage_t& out_fame, hid::types::storage_t& in_frame );
-            bool Transaction ( const hid::types::storage_t& out_fame, hid::types::storage_t& in_frame );
+            bool Transaction ( std::chrono::milliseconds delayMs, const hid::types::storage_t& out_frame, hid::types::storage_t& in_frame, uint32_t& in_code );
+            bool Transaction ( const hid::types::storage_t& out_frame, hid::types::storage_t& in_frame, uint32_t& in_code );
 
         private:
             void connect        ( sock_state_t& state );
-            void SendPrefix     ( sock_state_t& state, std::chrono::milliseconds delay_ms, sock_transaction_t& tr, const hid::types::storage_t& out_fame );
+            void SendPrefix     ( sock_state_t& state, std::chrono::milliseconds delay_ms, sock_transaction_t& tr, size_t out_fame_len );
             void SendPayload    ( sock_state_t& state, sock_transaction_t& tr, const hid::types::storage_t& out_fame );
             void RecvHeader     ( sock_state_t& state, sock_transaction_t& tr );
             void RecvPayload    ( sock_state_t& state, sock_transaction_t& tr, hid::types::storage_t& in_frame );
             void LogTransaction ( const sock_transaction_t& tr, const sock_state_t conn_state );
+            bool TransactionInt ( sock_state_t& state, std::chrono::milliseconds delay_ms, sock_transaction_t& tr, const hid::types::storage_t& out_fame );
 
 
         private:

@@ -19,6 +19,8 @@
 
     #include <fcntl.h>
     #include <unistd.h>
+	#include <sys/socket.h>
+	#include <netinet/tcp.h>
 
 #endif
 
@@ -113,7 +115,7 @@ void os_sock_nodelay ( os_sock_t& fd ) {
 
         int option_value = 1;
         socklen_t option_len = sizeof(option_value);
-        setsockopt (fd, IPPROTO_TCP, TCP_NODELAY, &set_flag, option_len);
+        setsockopt (fd, IPPROTO_TCP, TCP_NODELAY, &option_value, option_len);
 
     #endif
 }
