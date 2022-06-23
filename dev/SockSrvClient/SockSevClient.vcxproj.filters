@@ -8,6 +8,9 @@
     <ClCompile Include="..\common\src\SockServerClient.cpp">
       <Filter>lib</Filter>
     </ClCompile>
+    <ClCompile Include="..\common\src\HidTransportInt.cpp">
+      <Filter>lib</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="lib">
@@ -16,6 +19,9 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\common\include\SockServerClient.h">
+      <Filter>lib</Filter>
+    </ClInclude>
+    <ClInclude Include="..\common\include\HidTransportInt.h">
       <Filter>lib</Filter>
     </ClInclude>
   </ItemGroup>

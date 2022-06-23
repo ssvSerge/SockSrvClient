@@ -15,11 +15,13 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="..\common\src\HidTransportInt.cpp" />
     <ClCompile Include="..\common\src\SockServerClient.cpp" />
     <ClCompile Include="..\common\src\SockServerClientOsTools.cpp" />
     <ClCompile Include="main.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="..\common\include\HidTransportInt.h" />
     <ClInclude Include="..\common\include\SockServerClient.h" />
   </ItemGroup>
   <PropertyGroup Label="Globals">

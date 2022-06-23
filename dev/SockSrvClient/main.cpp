@@ -49,7 +49,7 @@ static void test_timeout_01 () {
     uint32_t ret_code;
     bool     ret_val;
 
-    hid::transport::sock_transaction_t tr;
+    hid::transport::transaction_t tr;
     hid::transport::SocketServer srv;
     hid::transport::SocketClient cli;
 
@@ -86,7 +86,7 @@ static void test_restarts_02 () {
     const char* const           port = "4401.sock";
     hid::transport::conn_type_t    conn_type = hid::transport::conn_type_t::CONN_TYPE_FILE;
 
-    hid::transport::sock_transaction_t tr;
+    hid::transport::transaction_t tr;
     hid::transport::SocketServer srv;
     hid::transport::SocketClient cli;
 
@@ -125,7 +125,7 @@ static void test_tx_delay_03 () {
     const char* const           port = "4401.sock";
     hid::transport::conn_type_t    conn_type = hid::transport::conn_type_t::CONN_TYPE_FILE;
 
-    hid::transport::sock_transaction_t tr;
+    hid::transport::transaction_t tr;
     hid::transport::SocketServer srv;
     hid::transport::SocketClient cli;
 

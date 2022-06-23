@@ -514,88 +514,6 @@ static void frame_rx (
 
 //---------------------------------------------------------------------------//
 
-sock_transaction_t::sock_transaction_t () {
-    inp_cmd  = 0;
-    inp_code = 0;
-    out_cmd  = 0;
-    out_code = 0;
-}
-
-void sock_transaction_t::start ( duration_ms_t expiration_default_ms ) {
-
-    inp_hdr.clear ();
-    inp_pay.clear ();
-    out_hdr.clear ();
-    out_pay.clear ();
-
-    tv_rcv_hdr  = checkpoint_t ( duration_ms_t ( 0 ) );
-    tv_rcv_pay  = checkpoint_t ( duration_ms_t ( 0 ) );
-    tv_exec     = checkpoint_t ( duration_ms_t ( 0 ) );
-    tv_snt_hdr  = checkpoint_t ( duration_ms_t ( 0 ) );
-    tv_snt_pay  = checkpoint_t ( duration_ms_t ( 0 ) );
-
-    tv_start    = time_source_t::now ();
-    tv_expiration = tv_start + expiration_default_ms;
-}
-
-void sock_transaction_t::checkpoint_set ( checkpoint_id_t point_type ) {
-
-    checkpoint_t ref = time_source_t::now();
-
-    switch ( point_type ) {
-        case checkpoint_id_t::CHECKPOINT_START:
-            tv_start = ref;
-            break;
-        case checkpoint_id_t::CHECKPOINT_RX_HDR:
-            tv_rcv_hdr = ref;
-            break;
-        case checkpoint_id_t::CHECKPOINT_RX_PAYLOAD:
-            tv_rcv_pay = ref;
-            break;
-        case checkpoint_id_t::CHECKPOINT_EXEC:
-            tv_exec = ref;
-            break;
-        case checkpoint_id_t::CHECKPOINT_TX_HDR:
-            tv_snt_hdr = ref;
-            break;
-        case checkpoint_id_t::CHECKPOINT_TX_PAYLOAD:
-            tv_snt_pay = ref;
-            break;
-        case checkpoint_id_t::CHECKPOINT_UNKNOWN:
-        default:
-            break;
-    }
-}
-
-void sock_transaction_t::expiration_set ( duration_ms_t expiration_ms ) {
-
-    checkpoint_t   expiration_tp;
-    expiration_tp = tv_start + expiration_ms;
-    tv_expiration = expiration_tp;
-}
-
-void sock_transaction_t::reset ( void ) {
-
-    checkpoint_t zero_val = {};
-
-    inp_hdr.clear ();
-    inp_pay.clear ();
-    out_hdr.clear ();
-    out_pay.clear ();
-
-    inp_cmd       = 0;
-
-    tv_start      = zero_val;
-    tv_rcv_hdr    = zero_val;
-    tv_rcv_pay    = zero_val;
-    tv_exec       = zero_val;
-    tv_snt_hdr    = zero_val;
-    tv_snt_pay    = zero_val;
-    tv_expiration = zero_val;
-}
-
-//---------------------------------------------------------------------------//
-
 SocketServer::SocketServer () {
     sock_init ();
     m_stop       = false;
@@ -765,7 +683,7 @@ void SocketServer::Stop ( void ) {
     m_clients.clear ();
 }
 
-void SocketServer::ShellCmdStart ( os_sock_t socket, conn_state_t& conn_state, sock_transaction_t& tr ) {
+void SocketServer::ShellCmdStart ( os_sock_t socket, conn_state_t& conn_state, transaction_t& tr ) {
 
     UNUSED (socket);
 
@@ -778,7 +696,7 @@ void SocketServer::ShellCmdStart ( os_sock_t socket, conn_state_t& conn_state, s
     }
 }
 
-void SocketServer::ShellReadPrefix ( os_sock_t socket, conn_state_t& conn_state, sock_transaction_t& tr ) {
+void SocketServer::ShellReadPrefix ( os_sock_t socket, conn_state_t& conn_state, transaction_t& tr ) {
     if ( conn_state == conn_state_t::CONN_OK ) {
         try {
 
@@ -816,7 +734,7 @@ void SocketServer::ShellReadPrefix ( os_sock_t socket, conn_state_t& conn_state,
     }
 }
 
-void SocketServer::ShellReadPayload ( os_sock_t socket, conn_state_t& conn_state, sock_transaction_t& tr ) {
+void SocketServer::ShellReadPayload ( os_sock_t socket, conn_state_t& conn_state, transaction_t& tr ) {
     if ( conn_state == conn_state_t::CONN_OK ) {
         try {
             frame_rx ( conn_state, socket, tr.tv_expiration, tr.inp_pay );
@@ -828,7 +746,7 @@ void SocketServer::ShellReadPayload ( os_sock_t socket, conn_state_t& conn_state
     }
 }
 
-void SocketServer::ShellCmdExec ( os_sock_t socket, conn_state_t& conn_state, sock_transaction_t& tr ) {
+void SocketServer::ShellCmdExec ( os_sock_t socket, conn_state_t& conn_state, transaction_t& tr ) {
 
     UNUSED (socket);
 
@@ -875,7 +793,7 @@ void SocketServer::ShellCmdExec ( os_sock_t socket, conn_state_t& conn_state, so
     }
 }
 
-void SocketServer::ShellSendPrefix ( os_sock_t socket, conn_state_t& conn_state, sock_transaction_t& tr ) {
+void SocketServer::ShellSendPrefix ( os_sock_t socket, conn_state_t& conn_state, transaction_t& tr ) {
     if ( conn_state == conn_state_t::CONN_OK ) {
         frame_tx ( conn_state, socket, tr.out_hdr );
         tr.checkpoint_set ( checkpoint_id_t::CHECKPOINT_TX_HDR );
@@ -885,7 +803,7 @@ void SocketServer::ShellSendPrefix ( os_sock_t socket, conn_state_t& conn_state,
     }
 }
 
-void SocketServer::ShellSendPayload ( os_sock_t socket, conn_state_t& conn_state, sock_transaction_t& tr ) {
+void SocketServer::ShellSendPayload ( os_sock_t socket, conn_state_t& conn_state, transaction_t& tr ) {
     if ( conn_state == conn_state_t::CONN_OK ) {
         frame_tx ( conn_state, socket, tr.out_pay );
         tr.checkpoint_set ( checkpoint_id_t::CHECKPOINT_TX_PAYLOAD );
@@ -895,7 +813,7 @@ void SocketServer::ShellSendPayload ( os_sock_t socket, conn_state_t& conn_state
     }
 }
 
-void SocketServer::LogTransaction ( const sock_transaction_t& tr, const conn_state_t conn_state ) {
+void SocketServer::LogTransaction ( const transaction_t& tr, const conn_state_t conn_state ) {
 
     try {
 
@@ -976,7 +894,7 @@ void SocketServer::ShellClose ( os_sock_t socket, const conn_state_t& conn_state
 
 bool SocketServer::Shell ( os_sock_t socket ) {
 
-    sock_transaction_t tr;
+    transaction_t tr;
 
     TTRACE ("Server: New client connected. \n");
 
@@ -1075,7 +993,7 @@ void SocketClient::connect ( conn_state_t& conn_state ) {
     std::this_thread::sleep_for ( std::chrono::milliseconds (100) );
 }
 
-void SocketClient::SendPrefix ( conn_state_t& conn_state, std::chrono::milliseconds delay_ms, sock_transaction_t& tr, size_t out_fame_len ) {
+void SocketClient::SendPrefix ( conn_state_t& conn_state, std::chrono::milliseconds delay_ms, transaction_t& tr, size_t out_fame_len ) {
 
     if ( conn_state == conn_state_t::CONN_OK ) {
         try {
@@ -1102,7 +1020,7 @@ void SocketClient::SendPrefix ( conn_state_t& conn_state, std::chrono::milliseco
     }
 }
 
-void SocketClient::SendPayload ( conn_state_t& conn_state, sock_transaction_t& tr, const hid::types::storage_t& out_fame ) {
+void SocketClient::SendPayload ( conn_state_t& conn_state, transaction_t& tr, const hid::types::storage_t& out_fame ) {
 
     if ( conn_state == conn_state_t::CONN_OK ) {
         try {
@@ -1121,7 +1039,7 @@ void SocketClient::SendPayload ( conn_state_t& conn_state, sock_transaction_t& t
     }
 }
 
-void SocketClient::RecvHeader ( conn_state_t& conn_state, sock_transaction_t& tr ) {
+void SocketClient::RecvHeader ( conn_state_t& conn_state, transaction_t& tr ) {
 
     if ( conn_state == conn_state_t::CONN_OK ) {
         try {
@@ -1154,7 +1072,7 @@ void SocketClient::RecvHeader ( conn_state_t& conn_state, sock_transaction_t& tr
     }
 }
 
-void SocketClient::RecvPayload ( conn_state_t& conn_state, sock_transaction_t& tr, hid::types::storage_t& in_frame ) {
+void SocketClient::RecvPayload ( conn_state_t& conn_state, transaction_t& tr, hid::types::storage_t& in_frame ) {
 
     if ( conn_state == conn_state_t::CONN_OK ) {
 
@@ -1175,7 +1093,7 @@ void SocketClient::RecvPayload ( conn_state_t& conn_state, sock_transaction_t& t
     }
 }
 
-void SocketClient::LogTransaction ( const sock_transaction_t& tr, const conn_state_t conn_state ) {
+void SocketClient::LogTransaction ( const transaction_t& tr, const conn_state_t conn_state ) {
 
     try {
 
@@ -1226,7 +1144,7 @@ void SocketClient::LogTransaction ( const sock_transaction_t& tr, const conn_sta
     }
 }
 
-bool SocketClient::TransactionInt ( conn_state_t& conn_state, std::chrono::milliseconds delay_ms, sock_transaction_t& tr, const hid::types::storage_t& out_frame ) {
+bool SocketClient::TransactionInt ( conn_state_t& conn_state, std::chrono::milliseconds delay_ms, transaction_t& tr, const hid::types::storage_t& out_frame ) {
 
     bool ret_val = false;
 
@@ -1252,7 +1170,7 @@ bool SocketClient::Transaction ( std::chrono::milliseconds delay_ms, const hid::
 
     try {
 
-        sock_transaction_t tr;
+        transaction_t tr;
         conn_state_t state = conn_state_t::CONN_OK;
 
         in_frame.clear ();
