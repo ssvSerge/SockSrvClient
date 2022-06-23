@@ -10,11 +10,9 @@
 using namespace std::chrono_literals;
 
 namespace hid {
-namespace socket {
-
+namespace transport {
 extern uint32_t SOCK_TEXT_TX_DELAY;
 extern std::atomic<int> g_sockets_cnt;
-
 }
 }
 
@@ -47,13 +45,13 @@ void cmd_handler ( const hid::types::storage_t& in_data, hid::types::storage_t& 
 static void test_timeout_01 () {
 
     const char* const           port = "4400";
-    hid::socket::conn_type_t    conn_type = hid::socket::conn_type_t::CONN_TYPE_SOCK;
+    hid::transport::conn_type_t    conn_type = hid::transport::conn_type_t::CONN_TYPE_SOCK;
     uint32_t ret_code;
     bool     ret_val;
 
-    hid::socket::sock_transaction_t tr;
-    hid::socket::SocketServer srv;
-    hid::socket::SocketClient cli;
+    hid::transport::sock_transaction_t tr;
+    hid::transport::SocketServer srv;
+    hid::transport::SocketClient cli;
 
     ::hid::types::storage_t out_fame;
     ::hid::types::storage_t inp_frame;
@@ -86,14 +84,14 @@ static void test_timeout_01 () {
 static void test_restarts_02 () {
 
     const char* const           port = "4401.sock";
-    hid::socket::conn_type_t    conn_type = hid::socket::conn_type_t::CONN_TYPE_FILE;
+    hid::transport::conn_type_t    conn_type = hid::transport::conn_type_t::CONN_TYPE_FILE;
 
-    hid::socket::sock_transaction_t tr;
-    hid::socket::SocketServer srv;
-    hid::socket::SocketClient cli;
+    hid::transport::sock_transaction_t tr;
+    hid::transport::SocketServer srv;
+    hid::transport::SocketClient cli;
 
-    ::hid::types::storage_t out_fame;
-    ::hid::types::storage_t inp_frame;
+    hid::types::storage_t out_fame;
+    hid::types::storage_t inp_frame;
 
     uint32_t ret_code;
     bool     ret_val;
@@ -114,7 +112,7 @@ static void test_restarts_02 () {
         }
 
         ret_val = cli.Transaction ( out_fame, inp_frame, ret_code );
-        std::cout << "Transaction (" << i << ") " << std::endl;
+        std::cout << "Transaction (" << i << "); val: " << ret_val << std::endl;
 
     }
 
@@ -125,14 +123,14 @@ static void test_restarts_02 () {
 static void test_tx_delay_03 () {
 
     const char* const           port = "4401.sock";
-    hid::socket::conn_type_t    conn_type = hid::socket::conn_type_t::CONN_TYPE_FILE;
+    hid::transport::conn_type_t    conn_type = hid::transport::conn_type_t::CONN_TYPE_FILE;
 
-    hid::socket::sock_transaction_t tr;
-    hid::socket::SocketServer srv;
-    hid::socket::SocketClient cli;
+    hid::transport::sock_transaction_t tr;
+    hid::transport::SocketServer srv;
+    hid::transport::SocketClient cli;
 
-    ::hid::types::storage_t out_fame;
-    ::hid::types::storage_t inp_frame;
+    hid::types::storage_t out_fame;
+    hid::types::storage_t inp_frame;
 
     uint32_t ret_code;
     bool     ret_val;
@@ -143,7 +141,7 @@ static void test_tx_delay_03 () {
     srv.SetHandler ( cmd_handler );
     handler_delay = 10ms;
 
-    hid::socket::SOCK_TEXT_TX_DELAY = 1;
+    hid::transport::SOCK_TEXT_TX_DELAY = 1;
     for( int i = 0; i < 15; i++ ) {
 
         ret_val = cli.Transaction ( 5s, out_fame, inp_frame, ret_code );

@@ -9,54 +9,12 @@
 
 #include <HidTypes.h>
 #include <HidOsTypes.h>
+#include <HidTransport.h>
 
 namespace hid {
 
-namespace socket {
+namespace transport {
 
-    using time_source_t = std::chrono::system_clock;
-    using duration_ns_t = std::chrono::nanoseconds;
-    using duration_us_t = std::chrono::microseconds;
-    using duration_ms_t = std::chrono::milliseconds;
-    using checkpoint_t  = std::chrono::time_point<time_source_t>;
-
-    constexpr auto SOCK_COMM_TIMEOUT = std::chrono::milliseconds ( 5 * 1000 );
-
-    enum class sock_checkpoint_type_t {
-        CHECKPOINT_UNKNOWN      =  0,
-        CHECKPOINT_START        = 10,
-        CHECKPOINT_RX_HDR       = 11,
-        CHECKPOINT_RX_PAYLOAD   = 12,
-        CHECKPOINT_EXEC         = 13,
-        CHECKPOINT_TX_HDR       = 14,
-        CHECKPOINT_TX_PAYLOAD   = 15
-    };
-
-    enum class conn_type_t {
-        CONN_TYPE_UNKNOW        =  0,
-        CONN_TYPE_SOCK          = 10,
-        CONN_TYPE_FILE          = 11,
-    };
-
-    enum class sock_state_t {
-        SOCK_STATE_UNKNOWN      =   0,
-        SOCK_OK                 = 100,
-        SOCK_RX_DONE            = 200,
-        SOCK_TX_DONE            = 300,
-        SOCK_ERR_GENERAL        = 400,
-        SOCK_ERR_CLOSED         = 401,
-        SOCK_ERR_TIMEOUT        = 402,
-        SOCK_ERR_OPEN           = 403,
-        SOCK_ERR_BIND           = 404,
-        SOCK_ERR_LISTEN         = 405,
-        SOCK_ERR_SELECT         = 406,
-        SOCK_ERR_ACCEPT         = 407,
-        SOCK_ERR_CONNECT        = 408,
-        SOCK_ERR_RX             = 409,
-        SOCK_ERR_TX             = 410,
-        SOCK_ERR_EXEC           = 411,
-        SOCK_ERR_SYNC           = 500
-    };
 
     class sock_transaction_t {
 
@@ -68,7 +26,7 @@ namespace socket {
         public:
             void start ( duration_ms_t expiration_default_ms );
             void expiration_set ( duration_ms_t expiration_ms );
-            void checkpoint_set ( sock_checkpoint_type_t point_type );
+            void checkpoint_set ( checkpoint_id_t point_type );
             void reset ( void );
 
         public:
@@ -102,7 +60,7 @@ namespace socket {
 
         public:
             SocketServer  ();
-            ~SocketServer ();
+           ~SocketServer  ();
 
         public:
             void  SetHandler ( ev_handler_t handler );
@@ -114,17 +72,17 @@ namespace socket {
 
         private:
             bool  Shell            ( os_sock_t socket );
-            void  ShellCmdStart    ( os_sock_t socket, sock_state_t& state, sock_transaction_t& tr );
-            void  ShellReadPrefix  ( os_sock_t socket, sock_state_t& state, sock_transaction_t& tr );
-            void  ShellReadPayload ( os_sock_t socket, sock_state_t& state, sock_transaction_t& tr );
-            void  ShellCmdExec     ( os_sock_t socket, sock_state_t& state, sock_transaction_t& tr );
-            void  ShellSendPrefix  ( os_sock_t socket, sock_state_t& state, sock_transaction_t& tr );
-            void  ShellSendPayload ( os_sock_t socket, sock_state_t& state, sock_transaction_t& tr );
-            void  ShellClose       ( os_sock_t socket, const sock_state_t& state );
-            void  LogTransaction   ( const sock_transaction_t& tr, const sock_state_t conn_state );
+            void  ShellCmdStart    ( os_sock_t socket, conn_state_t& state, sock_transaction_t& tr );
+            void  ShellReadPrefix  ( os_sock_t socket, conn_state_t& state, sock_transaction_t& tr );
+            void  ShellReadPayload ( os_sock_t socket, conn_state_t& state, sock_transaction_t& tr );
+            void  ShellCmdExec     ( os_sock_t socket, conn_state_t& state, sock_transaction_t& tr );
+            void  ShellSendPrefix  ( os_sock_t socket, conn_state_t& state, sock_transaction_t& tr );
+            void  ShellSendPayload ( os_sock_t socket, conn_state_t& state, sock_transaction_t& tr );
+            void  ShellClose       ( os_sock_t socket, const conn_state_t& state );
+            void  LogTransaction   ( const sock_transaction_t& tr, const conn_state_t state );
 
         private:
-            void  StartClient      ( sock_state_t& sock_state, os_sock_t client_sock );
+            void  StartClient      ( conn_state_t& state, os_sock_t client_sock );
 
         private:
             std::mutex          m_controller;
@@ -154,13 +112,13 @@ namespace socket {
             bool Transaction ( const hid::types::storage_t& out_frame, hid::types::storage_t& in_frame, uint32_t& in_code );
 
         private:
-            void connect        ( sock_state_t& state );
-            void SendPrefix     ( sock_state_t& state, std::chrono::milliseconds delay_ms, sock_transaction_t& tr, size_t out_fame_len );
-            void SendPayload    ( sock_state_t& state, sock_transaction_t& tr, const hid::types::storage_t& out_fame );
-            void RecvHeader     ( sock_state_t& state, sock_transaction_t& tr );
-            void RecvPayload    ( sock_state_t& state, sock_transaction_t& tr, hid::types::storage_t& in_frame );
-            void LogTransaction ( const sock_transaction_t& tr, const sock_state_t conn_state );
-            bool TransactionInt ( sock_state_t& state, std::chrono::milliseconds delay_ms, sock_transaction_t& tr, const hid::types::storage_t& out_fame );
+            void connect        ( conn_state_t& state );
+            void SendPrefix     ( conn_state_t& state, std::chrono::milliseconds delay_ms, sock_transaction_t& tr, size_t out_fame_len );
+            void SendPayload    ( conn_state_t& state, sock_transaction_t& tr, const hid::types::storage_t& out_fame );
+            void RecvHeader     ( conn_state_t& state, sock_transaction_t& tr );
+            void RecvPayload    ( conn_state_t& state, sock_transaction_t& tr, hid::types::storage_t& in_frame );
+            void LogTransaction ( const sock_transaction_t& tr, const conn_state_t conn_state );
+            bool TransactionInt ( conn_state_t& state, std::chrono::milliseconds delay_ms, sock_transaction_t& tr, const hid::types::storage_t& out_fame );
 
 
         private:

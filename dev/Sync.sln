@@ -17,6 +17,8 @@ Global
 		Debug|x86 = Debug|x86
 		Release|x64 = Release|x64
 		Release|x86 = Release|x86
+		Verify|x64 = Verify|x64
+		Verify|x86 = Verify|x86
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
 		{E4E24466-4065-444C-ADD2-55D92E1A9AE4}.Debug|x64.ActiveCfg = Debug|x64
@@ -27,6 +29,10 @@ Global
 		{E4E24466-4065-444C-ADD2-55D92E1A9AE4}.Release|x64.Build.0 = Release|x64
 		{E4E24466-4065-444C-ADD2-55D92E1A9AE4}.Release|x86.ActiveCfg = Release|x64
 		{E4E24466-4065-444C-ADD2-55D92E1A9AE4}.Release|x86.Build.0 = Release|x64
+		{E4E24466-4065-444C-ADD2-55D92E1A9AE4}.Verify|x64.ActiveCfg = Verify|x64
+		{E4E24466-4065-444C-ADD2-55D92E1A9AE4}.Verify|x64.Build.0 = Verify|x64
+		{E4E24466-4065-444C-ADD2-55D92E1A9AE4}.Verify|x86.ActiveCfg = Verify|x64
+		{E4E24466-4065-444C-ADD2-55D92E1A9AE4}.Verify|x86.Build.0 = Verify|x64
 		{9BFE1E51-D835-48E1-86E4-C9BDD29B094A}.Debug|x64.ActiveCfg = Debug|x64
 		{9BFE1E51-D835-48E1-86E4-C9BDD29B094A}.Debug|x64.Build.0 = Debug|x64
 		{9BFE1E51-D835-48E1-86E4-C9BDD29B094A}.Debug|x86.ActiveCfg = Debug|x64
@@ -35,6 +41,10 @@ Global
 		{9BFE1E51-D835-48E1-86E4-C9BDD29B094A}.Release|x64.Build.0 = Release|x64
 		{9BFE1E51-D835-48E1-86E4-C9BDD29B094A}.Release|x86.ActiveCfg = Release|x64
 		{9BFE1E51-D835-48E1-86E4-C9BDD29B094A}.Release|x86.Build.0 = Release|x64
+		{9BFE1E51-D835-48E1-86E4-C9BDD29B094A}.Verify|x64.ActiveCfg = Verify|x64
+		{9BFE1E51-D835-48E1-86E4-C9BDD29B094A}.Verify|x64.Build.0 = Verify|x64
+		{9BFE1E51-D835-48E1-86E4-C9BDD29B094A}.Verify|x86.ActiveCfg = Verify|x64
+		{9BFE1E51-D835-48E1-86E4-C9BDD29B094A}.Verify|x86.Build.0 = Verify|x64
 		{FE96DF41-CD80-48D2-A316-776E6A15491E}.Debug|x64.ActiveCfg = Debug|x64
 		{FE96DF41-CD80-48D2-A316-776E6A15491E}.Debug|x64.Build.0 = Debug|x64
 		{FE96DF41-CD80-48D2-A316-776E6A15491E}.Debug|x86.ActiveCfg = Debug|x64
@@ -43,6 +53,10 @@ Global
 		{FE96DF41-CD80-48D2-A316-776E6A15491E}.Release|x64.Build.0 = Release|x64
 		{FE96DF41-CD80-48D2-A316-776E6A15491E}.Release|x86.ActiveCfg = Release|x64
 		{FE96DF41-CD80-48D2-A316-776E6A15491E}.Release|x86.Build.0 = Release|x64
+		{FE96DF41-CD80-48D2-A316-776E6A15491E}.Verify|x64.ActiveCfg = Verify|x64
+		{FE96DF41-CD80-48D2-A316-776E6A15491E}.Verify|x64.Build.0 = Verify|x64
+		{FE96DF41-CD80-48D2-A316-776E6A15491E}.Verify|x86.ActiveCfg = Verify|x64
+		{FE96DF41-CD80-48D2-A316-776E6A15491E}.Verify|x86.Build.0 = Verify|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
