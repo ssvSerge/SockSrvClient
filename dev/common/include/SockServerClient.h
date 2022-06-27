@@ -20,29 +20,27 @@ namespace transport {
             SocketServer ();
             virtual ~SocketServer ();
 
-        public:
-            virtual void  SetHandler ( ev_handler_t handler );
-            virtual bool  Start ( const char* const port, conn_type_t conn_type );
-            virtual void  Stop  ( void );
+        private:
+            virtual bool  StartMe  ( const char* const port, conn_type_t conn_type ) override;
+            virtual void  StopMe   ( void ) override;
 
         private:
             void  Service          ( void );
-            bool  Shell            ( os_sock_t socket );
-            void  ShellCmdStart    ( os_sock_t socket, conn_state_t& state, transaction_t& tr );
-            void  ShellReadPrefix  ( os_sock_t socket, conn_state_t& state, transaction_t& tr );
-            void  ShellReadPayload ( os_sock_t socket, conn_state_t& state, transaction_t& tr );
-            void  ShellCmdExec     ( os_sock_t socket, conn_state_t& state, transaction_t& tr );
-            void  ShellSendPrefix  ( os_sock_t socket, conn_state_t& state, transaction_t& tr );
-            void  ShellSendPayload ( os_sock_t socket, conn_state_t& state, transaction_t& tr );
+            bool  Shell            ( os_sock_t sock );
+            void  StartClient      ( conn_state_t& state, os_sock_t client_sock );
             void  ShellClose       ( os_sock_t socket, const conn_state_t& state );
+
+        private:
+            void  ShellCmdStart    ( os_sock_t sock, conn_state_t& state, transaction_t& tr );
+            void  ShellReadPrefix  ( os_sock_t sock, conn_state_t& state, transaction_t& tr );
+            void  ShellReadPayload ( os_sock_t sock, conn_state_t& state, transaction_t& tr );
+            void  ShellCmdExec     ( os_sock_t sock, conn_state_t& state, transaction_t& tr );
+            void  ShellSendPrefix  ( os_sock_t sock, conn_state_t& state, transaction_t& tr );
+            void  ShellSendPayload ( os_sock_t sock, conn_state_t& state, transaction_t& tr );
             void  LogTransaction   ( const transaction_t& tr, const conn_state_t state );
 
         private:
-            void  StartClient      ( conn_state_t& state, os_sock_t client_sock );
-
-        private:
-            std::mutex          m_controller;
-            clients_list_t      m_clients;
+            clients_list_t  m_clients;
     };
 
     class SocketClient : public TransportClient {
@@ -52,23 +50,22 @@ namespace transport {
             virtual ~SocketClient ();
 
         public:
-            virtual bool Connect ( const char* const port, conn_type_t conn_type );
-            virtual void Close ();
-            virtual bool Transaction ( std::chrono::milliseconds delayMs, const hid::types::storage_t& out_frame, hid::types::storage_t& in_frame, uint32_t& in_code );
-            virtual bool Transaction ( const hid::types::storage_t& out_frame, hid::types::storage_t& in_frame, uint32_t& in_code );
+            virtual bool Connect ( const char* const port, conn_type_t conn_type ) override;
+            virtual void Close () override;
+            virtual bool Transaction ( duration_ms_t delay_ms, const hid::types::storage_t& out_frame, hid::types::storage_t& in_frame, uint32_t& in_code ) override;
+            virtual bool Sync ( duration_ms_t delay_ms, uint32_t rand );
 
         private:
             void connect        ( conn_state_t& state );
-            void SendPrefix     ( conn_state_t& state, std::chrono::milliseconds delay_ms, transaction_t& tr, size_t out_fame_len );
+            void SendPrefix     ( conn_state_t& state, duration_ms_t delay_ms, transaction_t& tr, size_t out_fame_len );
             void SendPayload    ( conn_state_t& state, transaction_t& tr, const hid::types::storage_t& out_fame );
             void RecvHeader     ( conn_state_t& state, transaction_t& tr );
             void RecvPayload    ( conn_state_t& state, transaction_t& tr, hid::types::storage_t& in_frame );
             void LogTransaction ( const transaction_t& tr, const conn_state_t conn_state );
-            bool TransactionInt ( conn_state_t& state, std::chrono::milliseconds delay_ms, transaction_t& tr, const hid::types::storage_t& out_fame );
-
+            bool TransactionInt ( conn_state_t& state, duration_ms_t delay_ms, transaction_t& tr, const hid::types::storage_t& out_fame );
 
         private:
-            os_sock_t     m_sock;
+            os_sock_t       m_sock;
     };
 
 }

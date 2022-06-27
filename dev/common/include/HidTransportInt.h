@@ -10,11 +10,11 @@
 namespace hid {
 namespace transport {
 
-    using time_source_t = std::chrono::system_clock;
-    using duration_ns_t = std::chrono::nanoseconds;
-    using duration_us_t = std::chrono::microseconds;
-    using duration_ms_t = std::chrono::milliseconds;
-    using checkpoint_t  = std::chrono::time_point<time_source_t>;
+    using time_source_t  =  std::chrono::system_clock;
+    using duration_ns_t  =  std::chrono::nanoseconds;
+    using duration_us_t  =  std::chrono::microseconds;
+    using duration_ms_t  =  std::chrono::milliseconds;
+    using checkpoint_t   =  std::chrono::time_point<time_source_t>;
 
     constexpr auto COMM_TIMEOUT = std::chrono::milliseconds ( 5 * 1000 );
 
@@ -74,10 +74,10 @@ namespace transport {
             void reset ( void );
 
         public:
-            int                     inp_cmd;
-            int                     inp_code;
-            int                     out_cmd;
-            int                     out_code;
+            uint32_t                inp_cmd;
+            uint32_t                inp_code;
+            uint32_t                out_cmd;
+            uint32_t                out_code;
             hid::types::storage_t   inp_hdr;
             hid::types::storage_t   inp_pay;
             hid::types::storage_t   out_hdr;
@@ -95,18 +95,23 @@ namespace transport {
 
     class TransportServer {
 
-        protected:
-            virtual void  SetHandler ( ev_handler_t handler ) = 0;
-            virtual bool  Start ( const char* const port, conn_type_t conn_type ) = 0;
-            virtual void  Stop ( void ) = 0;
+        public:
+            void  SetHandler ( ev_handler_t handler );
+            bool  Start ( const char* const port, conn_type_t conn_type );
+            void  Stop  ( void );
+
+        private:
+            virtual bool  StartMe ( const char* const port, conn_type_t conn_type ) = 0;
+            virtual void  StopMe ( void ) = 0;
 
         protected:
-            std::atomic<bool>   m_stop;
-            std::string         m_port;
-            conn_type_t         m_conn_type;
-            ev_handler_t        m_ev_handler;
-            std::thread         m_server_thread;
-            std::atomic<bool>   m_instance_active;
+            std::atomic<bool>   m_stop;                 // Request to shutdown.
+            std::atomic<bool>   m_instance_active;      // Only one active instance allowed.
+            std::mutex          m_access_controller;    // Prevent concurrent access from threads.
+            std::string         m_port;                 // Configuration sting. Port/File/etc.
+            conn_type_t         m_conn_type;            // 
+            ev_handler_t        m_ev_handler;           // 
+            std::thread         m_server_thread;        // 
 
     };
 
@@ -115,8 +120,7 @@ namespace transport {
         protected:
             virtual bool Connect ( const char* const port, conn_type_t conn_type ) = 0;
             virtual void Close () = 0;
-            virtual bool Transaction ( std::chrono::milliseconds delayMs, const hid::types::storage_t& out_frame, hid::types::storage_t& in_frame, uint32_t& in_code ) = 0;
-            virtual bool Transaction ( const hid::types::storage_t& out_frame, hid::types::storage_t& in_frame, uint32_t& in_code ) = 0;
+            virtual bool Transaction ( duration_ms_t delayMs, const hid::types::storage_t& out_frame, hid::types::storage_t& in_frame, uint32_t& in_code ) = 0;
 
         protected:
             std::string   m_port;

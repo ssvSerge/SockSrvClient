@@ -156,6 +156,7 @@ static void socket_nodelay (
     INOUT MANDATORY conn_state_t&       conn_state,
     INOUT MANDATORY os_sock_t&          sock 
 ) {
+
     if ( conn_state == conn_state_t::CONN_OK ) {
         os_sock_nodelay ( sock );
     }
@@ -415,8 +416,8 @@ static void frame_tx (
 static void frame_rx ( 
     INOUT MANDATORY conn_state_t&       conn_state,
     IN    MANDATORY os_sock_t           sock, 
-    IN    MANDATORY duration_ms_t       delay,
-    OUT   MANDATORY hid::types::storage_t& inp_frame 
+    OUT   MANDATORY hid::types::storage_t& inp_frame,
+    IN    MANDATORY duration_ms_t       delay
 ) {
 
     if ( conn_state == conn_state_t::CONN_OK ) {
@@ -507,7 +508,7 @@ static void frame_rx (
             conn_state = conn_state_t::CONN_ERR_TIMEOUT;
         } else {
             duration_ms_t ms = std::chrono::duration_cast<std::chrono::milliseconds>(exptiration_time - curr_time);
-            frame_rx ( conn_state, sock, ms, inp_frame );
+            frame_rx ( conn_state, sock, inp_frame, ms );
         }
     }
 }
@@ -538,7 +539,7 @@ void SocketServer::StartClient ( conn_state_t& conn_state, os_sock_t client_sock
 
 void SocketServer::Service () {
 
-    os_sock_t server_socket = static_cast<os_sock_t> (SOCK_INVALID_SOCK);
+    os_sock_t server_sock = static_cast<os_sock_t> (SOCK_INVALID_SOCK);
     bool to_log = true;
 
     int err_cnt_start = 0;
@@ -555,12 +556,12 @@ void SocketServer::Service () {
             break;
         }
 
-        if ( ! sock_valid(server_socket) ) {
+        if ( ! sock_valid(server_sock) ) {
 
             conn_state_t init_res = conn_state_t::CONN_OK;
-            socket_open   ( init_res, m_conn_type, server_socket );
-            socket_bind   ( init_res, server_socket, m_conn_type, m_port.c_str() );
-            socket_listen ( init_res, server_socket );
+            socket_open   ( init_res, m_conn_type, server_sock );
+            socket_bind   ( init_res, server_sock, m_conn_type, m_port.c_str() );
+            socket_listen ( init_res, server_sock );
 
             if ( init_res != conn_state_t::CONN_OK ) {
             	std::string err_msg;
@@ -575,7 +576,7 @@ void SocketServer::Service () {
 
                 TTRACE ( "Server: %s", err_msg.c_str() );
                 err_cnt_start++;
-                socket_close (server_socket);
+                socket_close (server_sock);
                 std::this_thread::sleep_for ( 1s );
                 continue;
             }
@@ -594,8 +595,8 @@ void SocketServer::Service () {
                 TTRACE ( "Server: Ready to accept new connections. \n" );
             }
 
-            socket_wait   ( conn_res, server_socket, std::chrono::seconds(1) );
-            socket_accept ( conn_res, server_socket, client_sock );
+            socket_wait   ( conn_res, server_sock, std::chrono::seconds(1) );
+            socket_accept ( conn_res, server_sock, client_sock );
             StartClient   ( conn_res, client_sock );
 
             if ( conn_res == conn_state_t::CONN_OK ) {
@@ -610,7 +611,7 @@ void SocketServer::Service () {
 
     }
 
-    socket_close ( server_socket );
+    socket_close ( server_sock );
 
     if ( m_conn_type == conn_type_t::CONN_TYPE_FILE ) {
         sock_unlink ( m_port.c_str() );
@@ -621,50 +622,41 @@ void SocketServer::Service () {
     m_instance_active = false;
 }
 
-void SocketServer::SetHandler ( ev_handler_t handler ) {
-
-    m_ev_handler = handler;
-}
-
-bool SocketServer::Start ( const char* const port, conn_type_t conn_type ) {
+bool SocketServer::StartMe ( const char* const port, conn_type_t conn_type ) {
 
     bool ret_val = false;
 
     TTRACE ( "Server: Start requested. \n" );
 
-    m_controller.lock ();
+    try {
 
-        try {
+        if ( ! m_instance_active ) {
 
-            if ( ! m_instance_active ) {
+            m_stop = false;
 
-                m_stop = false;
+            m_port = port;
+            m_conn_type = conn_type;
 
-                m_port = port;
-                m_conn_type = conn_type;
+            m_server_thread = std::thread ( &SocketServer::Service, this );
 
-                m_server_thread = std::thread ( &SocketServer::Service, this );
-
-                while ( ! m_instance_active ) {
-                    std::this_thread::sleep_for ( std::chrono::milliseconds (100) );
-                }
-
-                ret_val = true;
-
-            } else {
-                TTRACE ( "Server: Already running. \n" );
+            while ( ! m_instance_active ) {
+                std::this_thread::sleep_for ( std::chrono::milliseconds (10) );
             }
-            
-        } catch ( ... ) {
-            TTRACE ("Server: Exception in Server Start. \n");
-        }
 
-    m_controller.unlock ();
+            ret_val = true;
+
+        } else {
+            TTRACE ( "Server: Already running. \n" );
+        }
+            
+    } catch ( ... ) {
+        TTRACE ("Server: Exception in Server Start. \n");
+    }
 
     return ret_val;
 }
 
-void SocketServer::Stop ( void ) {
+void SocketServer::StopMe ( void ) {
 
     TTRACE ( "Server: Stop requested. \n" );
 
@@ -683,9 +675,9 @@ void SocketServer::Stop ( void ) {
     m_clients.clear ();
 }
 
-void SocketServer::ShellCmdStart ( os_sock_t socket, conn_state_t& conn_state, transaction_t& tr ) {
+void SocketServer::ShellCmdStart ( os_sock_t sock, conn_state_t& conn_state, transaction_t& tr ) {
 
-    UNUSED (socket);
+    UNUSED (sock);
 
     try {
         tr.start ( COMM_TIMEOUT );
@@ -696,11 +688,11 @@ void SocketServer::ShellCmdStart ( os_sock_t socket, conn_state_t& conn_state, t
     }
 }
 
-void SocketServer::ShellReadPrefix ( os_sock_t socket, conn_state_t& conn_state, transaction_t& tr ) {
+void SocketServer::ShellReadPrefix ( os_sock_t sock, conn_state_t& conn_state, transaction_t& tr ) {
     if ( conn_state == conn_state_t::CONN_OK ) {
         try {
 
-            frame_rx ( conn_state, socket, tr.tv_expiration, tr.inp_hdr );
+            frame_rx ( conn_state, sock, tr.tv_expiration, tr.inp_hdr );
             if ( conn_state == conn_state_t::CONN_OK ) {
                 if ( hid::stream::Prefix::Valid(tr.inp_hdr) ) {
 
@@ -717,6 +709,7 @@ void SocketServer::ShellReadPrefix ( os_sock_t socket, conn_state_t& conn_state,
                     hid::stream::Prefix::GetParams ( tr.inp_hdr, params );
                     tr.inp_pay.resize ( params.len );
                     tr.inp_cmd = static_cast<int> (params.command);
+                    tr.inp_code = params.code;
 
                     tr.checkpoint_set ( checkpoint_id_t::CHECKPOINT_RX_HDR );
                 } else {
@@ -734,10 +727,10 @@ void SocketServer::ShellReadPrefix ( os_sock_t socket, conn_state_t& conn_state,
     }
 }
 
-void SocketServer::ShellReadPayload ( os_sock_t socket, conn_state_t& conn_state, transaction_t& tr ) {
+void SocketServer::ShellReadPayload ( os_sock_t sock, conn_state_t& conn_state, transaction_t& tr ) {
     if ( conn_state == conn_state_t::CONN_OK ) {
         try {
-            frame_rx ( conn_state, socket, tr.tv_expiration, tr.inp_pay );
+            frame_rx ( conn_state, sock, tr.tv_expiration, tr.inp_pay );
             tr.checkpoint_set ( checkpoint_id_t::CHECKPOINT_RX_PAYLOAD );
         } catch ( ... ) {
             TTRACE ( "Server: Exception in Read Payload. \n" );
@@ -746,29 +739,25 @@ void SocketServer::ShellReadPayload ( os_sock_t socket, conn_state_t& conn_state
     }
 }
 
-void SocketServer::ShellCmdExec ( os_sock_t socket, conn_state_t& conn_state, transaction_t& tr ) {
+void SocketServer::ShellCmdExec ( os_sock_t sock, conn_state_t& conn_state, transaction_t& tr ) {
 
-    UNUSED (socket);
+    UNUSED (sock);
 
     if ( conn_state == conn_state_t::CONN_OK ) {
         
         try {
 
-            hid::stream::cmd_t out_cmd = hid::stream::cmd_t::STREAM_CMD_ERROR;
-            uint32_t out_code = static_cast<uint32_t> (hid::stream::cmd_t::STREAM_CMD_ERROR);
-
             {   // Exec command
                 hid::stream::cmd_t inp_cmd = static_cast<hid::stream::cmd_t> (tr.inp_cmd);
 
-                tr.out_pay.clear();
-
                 if ( inp_cmd == hid::stream::cmd_t::STREAM_CMD_PING_REQUEST ) {
-                    out_cmd  = hid::stream::cmd_t::STREAM_CMD_PING_RESPONSE;
-                    out_code = 0;
+                    tr.out_cmd  = static_cast<uint32_t> (hid::stream::cmd_t::STREAM_CMD_PING_RESPONSE);
+                    tr.out_code = tr.inp_code;
+                    tr.out_pay.clear ();
                 } else 
                 if ( inp_cmd == hid::stream::cmd_t::STREAM_CMD_REQUEST ) {
-                    out_cmd  = hid::stream::cmd_t::STREAM_CMD_RESPONSE;
-                    (m_ev_handler) ( tr.inp_pay, tr.out_pay, out_code );
+                    tr.out_cmd = static_cast<uint32_t> (hid::stream::cmd_t::STREAM_CMD_RESPONSE);
+                    (m_ev_handler) ( tr.inp_pay, tr.out_pay, tr.out_code );
                 }
             }
 
@@ -776,12 +765,12 @@ void SocketServer::ShellCmdExec ( os_sock_t socket, conn_state_t& conn_state, tr
 
             {   // Format response.
                 hid::stream::params_t params;
-                params.command = out_cmd;
-                params.code    = out_code;
+
+                params.command = static_cast<hid::stream::cmd_t> (tr.out_cmd);
+                params.code    = tr.out_code;
                 params.len     = static_cast<uint32_t> (tr.out_pay.size() );
 
                 hid::stream::Prefix::SetParams ( params, tr.out_hdr );
-
             }
 
         } catch( ... ) {
@@ -793,9 +782,9 @@ void SocketServer::ShellCmdExec ( os_sock_t socket, conn_state_t& conn_state, tr
     }
 }
 
-void SocketServer::ShellSendPrefix ( os_sock_t socket, conn_state_t& conn_state, transaction_t& tr ) {
+void SocketServer::ShellSendPrefix ( os_sock_t sock, conn_state_t& conn_state, transaction_t& tr ) {
     if ( conn_state == conn_state_t::CONN_OK ) {
-        frame_tx ( conn_state, socket, tr.out_hdr );
+        frame_tx ( conn_state, sock, tr.out_hdr );
         tr.checkpoint_set ( checkpoint_id_t::CHECKPOINT_TX_HDR );
         if ( conn_state != conn_state_t::CONN_OK ) {
             TTRACE ( "Server: Failed to send prefix. \n" );
@@ -803,9 +792,9 @@ void SocketServer::ShellSendPrefix ( os_sock_t socket, conn_state_t& conn_state,
     }
 }
 
-void SocketServer::ShellSendPayload ( os_sock_t socket, conn_state_t& conn_state, transaction_t& tr ) {
+void SocketServer::ShellSendPayload ( os_sock_t sock, conn_state_t& conn_state, transaction_t& tr ) {
     if ( conn_state == conn_state_t::CONN_OK ) {
-        frame_tx ( conn_state, socket, tr.out_pay );
+        frame_tx ( conn_state, sock, tr.out_pay );
         tr.checkpoint_set ( checkpoint_id_t::CHECKPOINT_TX_PAYLOAD );
         if ( conn_state != conn_state_t::CONN_OK ) {
             TTRACE ( "Server: Failed to send payload. \n" );
@@ -866,9 +855,9 @@ void SocketServer::LogTransaction ( const transaction_t& tr, const conn_state_t 
     }
 }
 
-void SocketServer::ShellClose ( os_sock_t socket, const conn_state_t& conn_state ) {
+void SocketServer::ShellClose ( os_sock_t sock, const conn_state_t& conn_state ) {
 
-    if ( sock_valid (socket) ) {
+    if ( sock_valid (sock) ) {
 
         if ( conn_state != conn_state_t::CONN_ERR_CLOSED ) {
 
@@ -883,7 +872,7 @@ void SocketServer::ShellClose ( os_sock_t socket, const conn_state_t& conn_state
 
             conn_state_t resp = conn_state_t::CONN_OK;
         
-            frame_tx ( resp, socket, out_frame );
+            frame_tx ( resp, sock, out_frame );
             if ( resp == conn_state_t::CONN_OK ) {
                 TTRACE ( "Server: Sent CMD_ERROR. \n" );
             }
@@ -892,49 +881,62 @@ void SocketServer::ShellClose ( os_sock_t socket, const conn_state_t& conn_state
     }
 }
 
-bool SocketServer::Shell ( os_sock_t socket ) {
+bool SocketServer::Shell ( os_sock_t sock ) {
 
-    transaction_t tr;
+    bool ret_val = false;
 
     TTRACE ("Server: New client connected. \n");
 
-    for ( ; ; ) {
+    try {
 
-        if ( m_stop ) {
-            TTRACE ("Server: Command STOP received. \n");
-            break;
+        transaction_t tr;
+
+        for ( ; ; ) {
+
+            if ( m_stop ) {
+                TTRACE ("Server: Command STOP received. \n");
+                ret_val = true;
+                break;
+            }
+
+            conn_state_t conn_state = conn_state_t::CONN_OK;
+
+            frame_wait ( conn_state, sock );
+            if ( conn_state == conn_state_t::CONN_ERR_TIMEOUT ) {
+                continue;
+            }
+
+            if ( conn_state != conn_state_t::CONN_OK ) {
+                TTRACE ( "Server: Shell failed. \n" );
+                ret_val = false;
+                break;
+            }
+
+            ShellCmdStart    ( sock, conn_state, tr );
+            ShellReadPrefix  ( sock, conn_state, tr );
+            ShellReadPayload ( sock, conn_state, tr );
+            ShellCmdExec     ( sock, conn_state, tr );
+            ShellSendPrefix  ( sock, conn_state, tr );
+            ShellSendPayload ( sock, conn_state, tr );
+            LogTransaction   ( tr, conn_state );
+
+            tr.reset();
+
+            if ( conn_state != conn_state_t::CONN_OK ) {
+                ShellClose (sock, conn_state);
+                break;
+            }
+
         }
 
-        conn_state_t conn_state = conn_state_t::CONN_OK;
 
-        frame_wait ( conn_state, socket );
-        if ( conn_state == conn_state_t::CONN_ERR_TIMEOUT ) {
-            continue;
-        }
-        if ( conn_state != conn_state_t::CONN_OK ) {
-            TTRACE ( "Server: Shell failed. \n" );
-            break;
-        }
-
-        ShellCmdStart    ( socket, conn_state, tr );
-        ShellReadPrefix  ( socket, conn_state, tr );
-        ShellReadPayload ( socket, conn_state, tr );
-        ShellCmdExec     ( socket, conn_state, tr );
-        ShellSendPrefix  ( socket, conn_state, tr );
-        ShellSendPayload ( socket, conn_state, tr );
-        LogTransaction   ( tr, conn_state );
-
-        tr.reset();
-
-        if ( conn_state != conn_state_t::CONN_OK ) {
-            ShellClose (socket, conn_state);
-            break;
-        }
-
+    } catch ( ... ) {
+        TTRACE ( "Server: Exception in Shell. \n" );
     }
 
-    socket_close ( socket );
-    TTRACE ("Server: Client shell closed. \n");
+    socket_close ( sock );
+    TTRACE ( "Server: Client shell closed. \n" );
+
     return true;
 
 }
@@ -993,7 +995,7 @@ void SocketClient::connect ( conn_state_t& conn_state ) {
     std::this_thread::sleep_for ( std::chrono::milliseconds (100) );
 }
 
-void SocketClient::SendPrefix ( conn_state_t& conn_state, std::chrono::milliseconds delay_ms, transaction_t& tr, size_t out_fame_len ) {
+void SocketClient::SendPrefix ( conn_state_t& conn_state, duration_ms_t delay_ms, transaction_t& tr, size_t out_fame_len ) {
 
     if ( conn_state == conn_state_t::CONN_OK ) {
         try {
@@ -1011,7 +1013,6 @@ void SocketClient::SendPrefix ( conn_state_t& conn_state, std::chrono::milliseco
             if ( conn_state != conn_state_t::CONN_OK ) {
                 TTRACE ( "Client: Failed to Send Prefix. \n" );
             }
-
 
         }   catch( ... ) {
             TTRACE ( "Client: Exception in Send Prefix. \n" );
@@ -1056,7 +1057,7 @@ void SocketClient::RecvHeader ( conn_state_t& conn_state, transaction_t& tr ) {
                     tr.out_cmd  = static_cast<uint32_t> (params.command);
                     tr.out_code = params.code;
                     tr.inp_pay.resize ( params.len );
-                    tr.inp_cmd = static_cast<int> (params.command);
+                    tr.inp_cmd  = static_cast<int> (params.command);
                 } else {
                     TTRACE ( "Client: Wrong header received. \n" );
                     conn_state = conn_state_t::CONN_ERR_SYNC;
@@ -1144,7 +1145,7 @@ void SocketClient::LogTransaction ( const transaction_t& tr, const conn_state_t 
     }
 }
 
-bool SocketClient::TransactionInt ( conn_state_t& conn_state, std::chrono::milliseconds delay_ms, transaction_t& tr, const hid::types::storage_t& out_frame ) {
+bool SocketClient::TransactionInt ( conn_state_t& conn_state, duration_ms_t delay_ms, transaction_t& tr, const hid::types::storage_t& out_frame ) {
 
     bool ret_val = false;
 
@@ -1159,12 +1160,13 @@ bool SocketClient::TransactionInt ( conn_state_t& conn_state, std::chrono::milli
         ret_val = true;
 
     } catch ( ... ) {
+        TTRACE ( "Client: Exception in TransactionInt. \n" );
     }
 
     return ret_val;
 }
 
-bool SocketClient::Transaction ( std::chrono::milliseconds delay_ms, const hid::types::storage_t& out_frame, hid::types::storage_t& in_frame, uint32_t& in_code ) {
+bool SocketClient::Transaction ( duration_ms_t delay_ms, const hid::types::storage_t& out_frame, hid::types::storage_t& in_frame, uint32_t& in_code ) {
 
     bool ret_val = false;
 
@@ -1206,9 +1208,53 @@ bool SocketClient::Transaction ( std::chrono::milliseconds delay_ms, const hid::
     return ret_val;
 }
 
-bool SocketClient::Transaction ( const hid::types::storage_t& out_fame, hid::types::storage_t& in_frame, uint32_t& in_code ) {
-    return Transaction ( COMM_TIMEOUT, out_fame, in_frame, in_code );
+bool SocketClient::Sync ( duration_ms_t delay_ms, uint32_t rand ) {
+
+    bool ret_val = false;
+
+    try {
+
+        hid::types::storage_t   request     = {};
+        hid::types::storage_t   response    = {};
+        hid::stream::params_t   params_out  = {};
+        hid::stream::params_t   params_inp  = {};
+        conn_state_t            state       = conn_state_t::CONN_OK;
+
+        params_out.command = hid::stream::cmd_t::STREAM_CMD_PING_REQUEST;
+        params_out.code    = rand;
+        params_out.len     = 0;
+
+        hid::stream::Prefix::SetParams  ( params_out, request );
+        hid::stream::Prefix::SetTimeout ( delay_ms,   request );
+
+        response.resize ( hid::stream::Prefix::PrefixSize() );
+
+        frame_tx ( state, m_sock, request );
+        frame_rx ( state, m_sock, response, delay_ms );
+
+        if ( state != conn_state_t::CONN_OK ) {
+            TTRACE ( "Client: Failed to Read/Write. \n" );
+        } else
+        if ( ! hid::stream::Prefix::GetParams ( response, params_inp ) ) {
+            TTRACE ( "Client: Wrong prefix received. \n" );
+        } else
+        if ( params_inp.command != hid::stream::cmd_t::STREAM_CMD_PING_RESPONSE ) {
+            TTRACE ( "Client: Wrong COMMAND received; PING_RESPONSE expected. \n" );
+        } else 
+        if ( params_inp.code != params_out.code ) {
+            TTRACE ( "Client: Wrong CODE received. \n" );
+        } else {
+            ret_val = true;
+        }
+
+    } catch( ... ) {
+        TTRACE ( "Client: Exception in Sync. \n" );
+    }
+
+    return ret_val;
 }
+
+//---------------------------------------------------------------------------//
 
 }
 }

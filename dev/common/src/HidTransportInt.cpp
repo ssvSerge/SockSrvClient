@@ -6,6 +6,7 @@ namespace transport {
 //---------------------------------------------------------------------------//
 
 transaction_t::transaction_t () {
+    
     inp_cmd  = 0;
     inp_code = 0;
     out_cmd  = 0;
@@ -87,7 +88,27 @@ void transaction_t::reset ( void ) {
 
 //---------------------------------------------------------------------------//
 
-}
+void TransportServer::SetHandler ( ev_handler_t handler ) {
+    m_access_controller.lock ();
+        m_ev_handler = handler;
+    m_access_controller.unlock ();
 }
 
+bool TransportServer::Start ( const char* const port, conn_type_t conn_type ) {
+    bool ret_val = false;
+    m_access_controller.lock ();
+        ret_val = StartMe ( port, conn_type );
+    m_access_controller.unlock ();
+    return ret_val;
+}
 
+void TransportServer::Stop ( void ) {
+    m_access_controller.lock ();
+        StopMe();
+    m_access_controller.unlock ();
+}
+
+//---------------------------------------------------------------------------//
+
+}
+}
